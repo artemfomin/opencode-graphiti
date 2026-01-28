@@ -1,6 +1,7 @@
 export interface GraphitiConfig {
   graphitiUrl: string;
   groupId: string;
+  userId?: string;
   profileGroupId?: string;
   maxMemories?: number;
   maxProjectMemories?: number;
@@ -47,6 +48,9 @@ export function isGraphitiConfig(value: unknown): value is GraphitiConfig {
 
   if (typeof obj.graphitiUrl !== "string") return false;
   if (typeof obj.groupId !== "string") return false;
+
+  if (obj.userId !== undefined && typeof obj.userId !== "string")
+    return false;
 
   if (
     obj.profileGroupId !== undefined &&

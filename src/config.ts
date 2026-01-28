@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { z } from "zod";
 import { stripJsoncComments } from "./services/jsonc.js";
 import { getConfigHome } from "./services/paths.js";
@@ -27,6 +27,7 @@ const DEFAULT_KEYWORD_PATTERNS = [
 const GraphitiConfigSchema = z.object({
   graphitiUrl: z.string().optional(),
   groupId: z.string().optional(),
+  userId: z.string().optional(),
   profileGroupId: z.string().optional(),
   maxMemories: z.number().optional(),
   maxProjectMemories: z.number().optional(),
@@ -70,6 +71,32 @@ function normalizeGraphitiUrl(url: string): string {
   return normalized + "/";
 }
 
+function sanitizeNamespace(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function extractProjectName(projectDir: string): string {
+  const packageJsonPath = join(projectDir, "package.json");
+
+  if (existsSync(packageJsonPath)) {
+    try {
+      const content = readFileSync(packageJsonPath, "utf-8");
+      const pkg = JSON.parse(content) as { name?: string };
+      if (pkg.name && typeof pkg.name === "string" && pkg.name.trim()) {
+        return pkg.name;
+      }
+    } catch {
+      // Fall through to directory name
+    }
+  }
+
+  return basename(projectDir);
+}
+
 function loadJsoncFile(path: string): PartialGraphitiConfig | null {
   if (!existsSync(path)) {
     return null;
@@ -96,6 +123,9 @@ function mergeConfigs(
 
   if (global?.groupId) merged.groupId = global.groupId;
   if (local?.groupId) merged.groupId = local.groupId;
+
+  if (global?.userId) merged.userId = global.userId;
+  if (local?.userId) merged.userId = local.userId;
 
   if (global?.profileGroupId) merged.profileGroupId = global.profileGroupId;
   if (local?.profileGroupId) merged.profileGroupId = local.profileGroupId;
@@ -152,7 +182,9 @@ export function initConfig(projectDir?: string): ConfigState {
 
   const graphitiUrl =
     process.env.GRAPHITI_URL ?? merged.graphitiUrl ?? undefined;
-  const groupId = process.env.GRAPHITI_GROUP_ID ?? merged.groupId ?? undefined;
+  const userId =
+    process.env.GRAPHITI_USER_ID ?? merged.userId ?? undefined;
+  let groupId = process.env.GRAPHITI_GROUP_ID ?? merged.groupId ?? undefined;
 
   if (!graphitiUrl) {
     _configState = {
@@ -160,6 +192,12 @@ export function initConfig(projectDir?: string): ConfigState {
       reason: "Missing required field: graphitiUrl",
     };
     return _configState;
+  }
+
+  if (!groupId && userId && projectDir) {
+    const projectName = extractProjectName(projectDir);
+    const sanitizedName = sanitizeNamespace(projectName);
+    groupId = `${userId}_${sanitizedName}`;
   }
 
   if (!groupId) {
@@ -170,10 +208,13 @@ export function initConfig(projectDir?: string): ConfigState {
     return _configState;
   }
 
+  const defaultProfileGroupId = userId ?? `${groupId}_profile`;
+
   const config: GraphitiConfig = {
     graphitiUrl: normalizeGraphitiUrl(graphitiUrl),
     groupId,
-    profileGroupId: merged.profileGroupId ?? `${groupId}_profile`,
+    userId,
+    profileGroupId: merged.profileGroupId ?? defaultProfileGroupId,
     maxMemories: merged.maxMemories ?? 5,
     maxProjectMemories: merged.maxProjectMemories ?? 10,
     maxProfileItems: merged.maxProfileItems ?? 5,
