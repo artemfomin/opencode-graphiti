@@ -1,9 +1,11 @@
 import { describe, it, expect } from "bun:test";
-import {
+import type {
   GraphitiConfig,
   Episode,
   Node,
   Fact,
+} from "./graphiti.js";
+import {
   isEpisode,
   isNode,
   isFact,
