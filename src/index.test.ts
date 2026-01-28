@@ -254,7 +254,7 @@ describe("GraphitiPlugin", () => {
 
       const toolCall = mockFetch.mock.calls[1]!;
       const toolBody = JSON.parse(toolCall[1].body);
-      expect(toolBody.params.arguments.group_id).toContain("test-group_test-project");
+      expect(toolBody.params.arguments.group_id).toMatch(/^test-group_[a-f0-9]{8}$/);
     });
 
     it("strips private content before storing", async () => {

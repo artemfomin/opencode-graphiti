@@ -36,12 +36,9 @@ function extractProjectName(projectDir: string): string {
 
 export function getProjectNamespace(projectDir: string): string {
   const config = getConfig();
-
-  const projectName = extractProjectName(projectDir);
-  const sanitizedName = sanitizeNamespace(projectName);
   const dirHash = getDirectoryHash(projectDir);
 
-  return `${config.groupId}_${sanitizedName}_${dirHash}`;
+  return `${config.groupId}_${dirHash}`;
 }
 
 export function getProfileNamespace(): string {

@@ -26,6 +26,7 @@ describe("config", () => {
     // Clear env vars
     delete process.env.GRAPHITI_URL;
     delete process.env.GRAPHITI_GROUP_ID;
+    delete process.env.GRAPHITI_USER_ID;
   });
 
   afterEach(() => {
@@ -36,6 +37,7 @@ describe("config", () => {
     delete process.env.GRAPHITI_TEST_HOME;
     delete process.env.GRAPHITI_URL;
     delete process.env.GRAPHITI_GROUP_ID;
+    delete process.env.GRAPHITI_USER_ID;
   });
 
   describe("ConfigState pattern", () => {
@@ -257,6 +259,111 @@ describe("config", () => {
         expect(state.config.groupId).toBe("env-group");
       }
     });
+
+    test("GRAPHITI_USER_ID overrides config file userId", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          userId: "file-user",
+        })
+      );
+
+      process.env.GRAPHITI_USER_ID = "env-user";
+
+      mkdirSync(projectDir, { recursive: true });
+
+      const state = initConfig(projectDir);
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.userId).toBe("env-user");
+        expect(state.config.groupId).toMatch(/^env-user_/);
+      }
+    });
+  });
+
+  describe("userId support", () => {
+    test("derives groupId from userId and project name when groupId not set", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          userId: "john",
+        })
+      );
+
+      mkdirSync(projectDir, { recursive: true });
+      writeFileSync(
+        join(projectDir, "package.json"),
+        JSON.stringify({ name: "my-project" })
+      );
+
+      const state = initConfig(projectDir);
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.userId).toBe("john");
+        expect(state.config.groupId).toBe("john_my-project");
+      }
+    });
+
+    test("uses explicit groupId when both userId and groupId present", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          userId: "john",
+          groupId: "explicit-group",
+        })
+      );
+
+      const state = initConfig(projectDir);
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.userId).toBe("john");
+        expect(state.config.groupId).toBe("explicit-group");
+      }
+    });
+
+    test("profileGroupId defaults to userId when userId present", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          userId: "john",
+        })
+      );
+
+      mkdirSync(projectDir, { recursive: true });
+
+      const state = initConfig(projectDir);
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.profileGroupId).toBe("john");
+      }
+    });
+
+    test("backward compat: works with only groupId (no userId)", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "old-group",
+        })
+      );
+
+      const state = initConfig(projectDir);
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.groupId).toBe("old-group");
+        expect(state.config.userId).toBeUndefined();
+        expect(state.config.profileGroupId).toBe("old-group_profile");
+      }
+    });
   });
 
   describe("graphitiUrl normalization", () => {
@@ -346,12 +453,13 @@ describe("config", () => {
       }
     });
 
-    test("missing groupId returns unconfigured", () => {
+    test("missing both userId and groupId returns unconfigured", () => {
       mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
       writeFileSync(
         globalConfigPath,
         JSON.stringify({
           graphitiUrl: "http://localhost:8000",
+          // no userId, no groupId
         })
       );
 

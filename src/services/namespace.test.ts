@@ -32,14 +32,14 @@ describe("Namespace Generation", () => {
   });
 
   describe("getProjectNamespace()", () => {
-    it("should generate namespace with groupId, project name, and directory hash", () => {
+    it("should generate namespace with groupId and directory hash", () => {
       const testDir = join(process.env.GRAPHITI_TEST_HOME!, "test-project");
       mkdirSync(testDir, { recursive: true });
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should have format: {groupId}_{projectName}_{hash}
-      expect(namespace).toMatch(/^test-team_test-project_[a-f0-9]{8}$/);
+      // Should have format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should extract project name from package.json if it exists", () => {
@@ -57,8 +57,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should use package.json name
-      expect(namespace).toMatch(/^test-team_my-awesome-app_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash} - project name no longer in namespace
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should fall back to directory name if package.json doesn't exist", () => {
@@ -67,8 +67,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should use directory name
-      expect(namespace).toMatch(/^test-team_fallback-project_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash} - directory name used for hash only
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should fall back to directory name if package.json has no name field", () => {
@@ -86,8 +86,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should use directory name
-      expect(namespace).toMatch(/^test-team_no-name-project_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should sanitize project name: lowercase", () => {
@@ -104,8 +104,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should be lowercase
-      expect(namespace).toMatch(/^test-team_myawesomeproject_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should sanitize project name: replace special characters with underscore", () => {
@@ -122,7 +122,7 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      expect(namespace).toMatch(/^test-team_my-project_v1_0_[a-f0-9]{8}$/);
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should sanitize project name: collapse multiple underscores", () => {
@@ -139,8 +139,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Multiple underscores should collapse to single
-      expect(namespace).toMatch(/^test-team_my_project_name_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should sanitize project name: trim leading/trailing underscores", () => {
@@ -157,8 +157,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Leading/trailing underscores should be trimmed
-      expect(namespace).toMatch(/^test-team_my-project_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should handle complex sanitization: My Project!", () => {
@@ -175,8 +175,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should result in: my_project
-      expect(namespace).toMatch(/^test-team_my_project_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should generate consistent hash for same directory path", () => {
@@ -231,8 +231,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should still generate valid namespace (with directory name as fallback or empty sanitized name)
-      expect(namespace).toMatch(/^test-team_[a-z0-9_-]*_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should preserve hyphens in project name", () => {
@@ -249,8 +249,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Hyphens should be preserved
-      expect(namespace).toMatch(/^test-team_my-awesome-project_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
   });
 
@@ -306,8 +306,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Should only contain alphanumeric, hyphens, and underscores
-      expect(namespace).toMatch(/^test-team_[a-z0-9_-]+_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should handle unicode characters", () => {
@@ -324,8 +324,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Unicode should be replaced with underscores
-      expect(namespace).toMatch(/^test-team_caf_-project_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
 
     it("should handle spaces in project name", () => {
@@ -342,8 +342,8 @@ describe("Namespace Generation", () => {
 
       const namespace = getProjectNamespace(testDir);
 
-      // Spaces should be replaced with underscores
-      expect(namespace).toMatch(/^test-team_my_awesome_project_[a-f0-9]{8}$/);
+      // Format: {groupId}_{hash}
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
     });
   });
 });
