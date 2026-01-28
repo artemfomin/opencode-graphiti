@@ -1,6 +1,6 @@
-# opencode-supermemory
+# opencode-graphiti
 
-OpenCode plugin for persistent memory using [Supermemory](https://supermemory.ai).
+OpenCode plugin for persistent memory using [Graphiti](https://github.com/getzep/graphiti) MCP server.
 
 Your agent remembers what you tell it - across sessions, across projects.
 
@@ -9,18 +9,19 @@ Your agent remembers what you tell it - across sessions, across projects.
 ### For Humans
 
 ```bash
-bunx opencode-supermemory@latest install
+bunx opencode-graphiti@latest install
 ```
 
-Then get your API key from [console.supermemory.ai](https://console.supermemory.ai) and set it:
+Then set your Graphiti server URL and group ID:
 
 ```bash
-export SUPERMEMORY_API_KEY="sm_..."
+export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
+export GRAPHITI_GROUP_ID="your-group-id"
 ```
 
 **Or let your agent do it** - paste this into OpenCode:
 ```
-Install opencode-supermemory by following https://raw.githubusercontent.com/supermemoryai/opencode-supermemory/main/README.md
+Install opencode-graphiti by following https://raw.githubusercontent.com/yourusername/opencode-graphiti/main/README.md
 ```
 
 ### For LLM Agents
@@ -28,17 +29,17 @@ Install opencode-supermemory by following https://raw.githubusercontent.com/supe
 <details>
 <summary>Instructions for LLM Agents (click to expand)</summary>
 
-If you're an LLM agent helping set up opencode-supermemory, follow these steps:
+If you're an LLM agent helping set up opencode-graphiti, follow these steps:
 
 #### Step 1: Run the installer
 
 ```bash
-bunx opencode-supermemory@latest install --no-tui
+bunx opencode-graphiti@latest install --no-tui
 ```
 
 This will:
 - Register the plugin in `~/.config/opencode/opencode.jsonc`
-- Create the `/supermemory-init` command
+- Create the `/graphiti-init` command
 
 #### Step 2: Verify the config
 
@@ -49,7 +50,7 @@ cat ~/.config/opencode/opencode.jsonc
 Should contain:
 ```json
 {
-  "plugin": ["opencode-supermemory"]
+  "plugin": ["opencode-graphiti"]
 }
 ```
 
@@ -59,7 +60,7 @@ If not, add it manually:
 ```jsonc
 {
   "plugin": [
-    "opencode-supermemory"
+    "opencode-graphiti"
     // ... other plugins
   ]
 }
@@ -68,25 +69,25 @@ If not, add it manually:
 **JSON:**
 ```json
 {
-  "plugin": ["opencode-supermemory"]
+  "plugin": ["opencode-graphiti"]
 }
 ```
 
-#### Step 3: Configure API key
+#### Step 3: Configure Graphiti connection
 
-Ask the user to get their API key from [console.supermemory.ai](https://console.supermemory.ai).
-
-Then set it via environment variable:
+Set required environment variables:
 
 ```bash
-export SUPERMEMORY_API_KEY="sm_..."
+export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
+export GRAPHITI_GROUP_ID="your-group-id"
 ```
 
-Or create `~/.config/opencode/supermemory.jsonc`:
+Or create `~/.config/opencode/graphiti.jsonc`:
 
 ```jsonc
 {
-  "apiKey": "sm_..."
+  "graphitiUrl": "http://localhost:8000/mcp/",
+  "groupId": "myteam"
 }
 ```
 
@@ -98,14 +99,14 @@ Tell the user to restart OpenCode and run:
 opencode -c
 ```
 
-They should see `supermemory` in the tools list. If not, check:
-1. Is `SUPERMEMORY_API_KEY` set?
+They should see `graphiti` in the tools list. If not, check:
+1. Is `GRAPHITI_URL` and `GRAPHITI_GROUP_ID` set?
 2. Is the plugin in `opencode.jsonc`?
-3. Check logs: `tail ~/.opencode-supermemory.log`
+3. Check logs: `tail ~/.opencode-graphiti.log`
 
 #### Step 5: Initialize codebase memory (optional)
 
-Run `/supermemory-init` to have the agent explore and memorize the codebase.
+Run `/graphiti-init` to have the agent explore and memorize the codebase.
 
 </details>
 
@@ -116,22 +117,22 @@ Run `/supermemory-init` to have the agent explore and memorize the codebase.
 On first message, the agent receives (invisible to user):
 - User profile (cross-project preferences)
 - Project memories (all project knowledge)
-- Relevant user memories (semantic search)
+- Relevant memories (semantic search)
 
 Example of what the agent sees:
 ```
-[SUPERMEMORY]
+[GRAPHITI]
 
 User Profile:
 - Prefers concise responses
 - Expert in TypeScript
 
 Project Knowledge:
-- [100%] Uses Bun, not Node.js
-- [100%] Build: bun run build
+- Uses Bun, not Node.js
+- Build: bun run build
 
 Relevant Memories:
-- [82%] Build fails if .env.local missing
+- Build fails if .env.local missing
 ```
 
 The agent uses this context automatically - no manual prompting needed.
@@ -149,7 +150,7 @@ Add custom triggers via `keywordPatterns` config.
 
 ### Codebase Indexing
 
-Run `/supermemory-init` to explore and memorize your codebase structure, patterns, and conventions.
+Run `/graphiti-init` to explore and memorize your codebase structure, patterns, and conventions.
 
 ### Preemptive Compaction
 
@@ -170,7 +171,7 @@ Content in `<private>` tags is never stored.
 
 ## Tool Usage
 
-The `supermemory` tool is available to the agent:
+The `graphiti` tool is available to the agent:
 
 | Mode | Args | Description |
 |------|------|-------------|
@@ -179,6 +180,7 @@ The `supermemory` tool is available to the agent:
 | `profile` | `query?` | View user profile |
 | `list` | `scope?`, `limit?` | List memories |
 | `forget` | `memoryId`, `scope?` | Delete memory |
+| `help` | - | Show help text |
 
 **Scopes:** `user` (cross-project), `project` (default)
 
@@ -186,51 +188,68 @@ The `supermemory` tool is available to the agent:
 
 ## Memory Scoping
 
-| Scope | Tag | Persists |
-|-------|-----|----------|
-| User | `opencode_user_{sha256(git email)}` | All projects |
-| Project | `opencode_project_{sha256(directory)}` | This project |
+| Scope | Namespace | Persists |
+|-------|-----------|----------|
+| User | `{groupId}_profile` | All projects |
+| Project | `{groupId}_{projectName}_{hash}` | This project |
 
 ## Configuration
 
-Create `~/.config/opencode/supermemory.jsonc`:
+Create `~/.config/opencode/graphiti.jsonc`:
 
 ```jsonc
 {
-  // API key (can also use SUPERMEMORY_API_KEY env var)
-  "apiKey": "sm_...",
+  // Graphiti MCP server URL (required)
+  "graphitiUrl": "http://localhost:8000/mcp/",
   
-  // Min similarity for memory retrieval (0-1)
-  "similarityThreshold": 0.6,
+  // Base group ID for namespacing (required)
+  "groupId": "myteam",
   
-  // Max memories injected per request
+  // Profile namespace (optional, default: "{groupId}_profile")
+  "profileGroupId": "myteam_profile",
+  
+  // Max memories injected per request (default: 5)
   "maxMemories": 5,
   
-  // Max project memories listed
+  // Max project memories listed (default: 10)
   "maxProjectMemories": 10,
   
-  // Max profile facts injected
+  // Max profile facts injected (default: 5)
   "maxProfileItems": 5,
   
-  // Include user profile in context
+  // Include user profile in context (default: true)
   "injectProfile": true,
-  
-  // Prefix for container tags
-  "containerTagPrefix": "opencode",
   
   // Extra keyword patterns for memory detection (regex)
   "keywordPatterns": ["log\\s+this", "write\\s+down"],
   
-  // Context usage ratio that triggers compaction (0-1)
+  // Context usage ratio that triggers compaction (default: 0.80)
   "compactionThreshold": 0.80
 }
 ```
 
-All fields optional. Env var `SUPERMEMORY_API_KEY` takes precedence over config file.
+**Required fields:** `graphitiUrl`, `groupId`
+
+**Environment variables** (take precedence over config file):
+- `GRAPHITI_URL` - MCP server URL
+- `GRAPHITI_GROUP_ID` - Base group ID
+
+### Local Project Override
+
+Create `.opencode/graphiti.jsonc` in your project root to override settings:
+
+```jsonc
+{
+  "groupId": "project-specific-id",
+  "maxProjectMemories": 20
+}
+```
+
+Local config merges with global config. Environment variables take highest precedence.
 
 ## Usage with Oh My OpenCode
 
-If you're using [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode), disable its built-in auto-compact hook to let supermemory handle context compaction:
+If you're using [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode), disable its built-in auto-compact hook to let graphiti handle context compaction:
 
 Add to `~/.config/opencode/oh-my-opencode.json`:
 
@@ -246,20 +265,21 @@ Add to `~/.config/opencode/oh-my-opencode.json`:
 bun install
 bun run build
 bun run typecheck
+bun test
 ```
 
 Local install:
 
 ```jsonc
 {
-  "plugin": ["file:///path/to/opencode-supermemory"]
+  "plugin": ["file:///path/to/opencode-graphiti"]
 }
 ```
 
 ## Logs
 
 ```bash
-tail -f ~/.opencode-supermemory.log
+tail -f ~/.opencode-graphiti.log
 ```
 
 ## License
