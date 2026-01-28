@@ -21,7 +21,7 @@ export GRAPHITI_GROUP_ID="your-group-id"
 
 **Or let your agent do it** - paste this into OpenCode:
 ```
-Install opencode-graphiti by following https://raw.githubusercontent.com/yourusername/opencode-graphiti/main/README.md
+Install opencode-graphiti by following https://raw.githubusercontent.com/artemfomin/opencode-graphiti/main/README.md
 ```
 
 ### For LLM Agents
@@ -181,6 +181,19 @@ The `graphiti` tool is available to the agent:
 | `list` | `scope?`, `limit?` | List memories |
 | `forget` | `memoryId`, `scope?` | Delete memory |
 | `help` | - | Show help text |
+
+**Examples:**
+
+```javascript
+// Add a project memory
+graphiti({ mode: "add", content: "This project uses Bun", type: "project-config" })
+
+// Search memories
+graphiti({ mode: "search", query: "build command" })
+
+// List memories
+graphiti({ mode: "list", limit: 10 })
+```
 
 **Scopes:** `user` (cross-project), `project` (default)
 
