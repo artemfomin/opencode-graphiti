@@ -1,12 +1,12 @@
 {
-  "name": "opencode-supermemory",
+  "name": "opencode-graphiti",
   "version": "0.1.8",
   "description": "OpenCode plugin that gives coding agents persistent memory using Supermemory",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "opencode-supermemory": "./dist/cli.js"
+    "opencode-graphiti": "./dist/cli.js"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target node && bun build ./src/cli.ts --outfile ./dist/cli.js --target node && tsc --emitDeclarationOnly",
@@ -30,7 +30,6 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.0.162",
-    "supermemory": "^4.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
