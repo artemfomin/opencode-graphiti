@@ -12,7 +12,14 @@ Your agent remembers what you tell it - across sessions, across projects.
 bunx opencode-graphiti@latest install
 ```
 
-Then set your Graphiti server URL and group ID:
+Then set your Graphiti server URL and user ID:
+
+```bash
+export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
+export GRAPHITI_USER_ID="your-user-id"
+```
+
+Or use explicit group ID:
 
 ```bash
 export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
@@ -79,7 +86,7 @@ Set required environment variables:
 
 ```bash
 export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
-export GRAPHITI_GROUP_ID="your-group-id"
+export GRAPHITI_USER_ID="your-user-id"
 ```
 
 Or create `~/.config/opencode/graphiti.jsonc`:
@@ -87,7 +94,7 @@ Or create `~/.config/opencode/graphiti.jsonc`:
 ```jsonc
 {
   "graphitiUrl": "http://localhost:8000/mcp/",
-  "groupId": "myteam"
+  "userId": "your-user-id"
 }
 ```
 
@@ -100,7 +107,7 @@ opencode -c
 ```
 
 They should see `graphiti` in the tools list. If not, check:
-1. Is `GRAPHITI_URL` and `GRAPHITI_GROUP_ID` set?
+1. Is `GRAPHITI_URL` and (`GRAPHITI_USER_ID` or `GRAPHITI_GROUP_ID`) set?
 2. Is the plugin in `opencode.jsonc`?
 3. Check logs: `tail ~/.opencode-graphiti.log`
 
@@ -203,8 +210,8 @@ graphiti({ mode: "list", limit: 10 })
 
 | Scope | Namespace | Persists |
 |-------|-----------|----------|
-| User | `{groupId}_profile` | All projects |
-| Project | `{groupId}_{projectName}_{hash}` | This project |
+| User | `{userId}` or `{groupId}_profile` | All projects |
+| Project | `{groupId}_{hash}` | This project |
 
 ## Configuration
 
@@ -215,10 +222,14 @@ Create `~/.config/opencode/graphiti.jsonc`:
   // Graphiti MCP server URL (required)
   "graphitiUrl": "http://localhost:8000/mcp/",
   
-  // Base group ID for namespacing (required)
+  // User identifier for automatic namespacing (optional*)
+  "userId": "john",
+  
+  // Base group ID for namespacing (optional*)
+  // Auto-derived as {userId}_{projectName} if userId set but groupId not
   "groupId": "myteam",
   
-  // Profile namespace (optional, default: "{groupId}_profile")
+  // Profile namespace (optional, default: "{userId}" or "{groupId}_profile")
   "profileGroupId": "myteam_profile",
   
   // Max memories injected per request (default: 5)
@@ -241,11 +252,37 @@ Create `~/.config/opencode/graphiti.jsonc`:
 }
 ```
 
-**Required fields:** `graphitiUrl`, `groupId`
+**Required fields:** `graphitiUrl`, (`userId` or `groupId`)
+
+*Either `userId` or `groupId` must be set. When `userId` is set without an explicit `groupId`, the `groupId` is automatically derived as `{userId}_{projectName}`.*
 
 **Environment variables** (take precedence over config file):
 - `GRAPHITI_URL` - MCP server URL
-- `GRAPHITI_GROUP_ID` - Base group ID
+- `GRAPHITI_USER_ID` - User identifier for automatic namespacing
+- `GRAPHITI_GROUP_ID` - Base group ID (or auto-derived from userId)
+
+### Automatic groupId Derivation
+
+When `userId` is set but `groupId` is not explicitly provided, the plugin automatically derives `groupId`:
+
+```
+groupId = {userId}_{projectName}
+```
+
+Where `projectName` is extracted from `package.json` name field (or directory name as fallback), sanitized to remove special characters.
+
+**Example:**
+- `userId`: `"john"`
+- Project name: `"my-app"`
+- Derived `groupId`: `"john_my-app"`
+
+This allows you to configure `userId` once globally, and each project gets its own namespace automatically.
+
+**Priority order for groupId resolution:**
+1. `GRAPHITI_GROUP_ID` environment variable (highest)
+2. Local config `groupId` (`.opencode/graphiti.jsonc`)
+3. Global config `groupId` (`~/.config/opencode/graphiti.jsonc`)
+4. Auto-derived from `userId` + project name (if userId is set)
 
 ### Local Project Override
 
