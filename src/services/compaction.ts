@@ -1,12 +1,15 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
-import { supermemoryClient } from "./client.js";
+import { GraphitiClient } from "./graphiti-client.js";
+import { getProjectNamespace } from "./namespace.js";
 import { log } from "./logger.js";
-import { CONFIG } from "../config.js";
+import { getConfig } from "../config.js";
+import { getDataHome } from "./paths.js";
 
-const MESSAGE_STORAGE = join(homedir(), ".opencode", "messages");
-const PART_STORAGE = join(homedir(), ".opencode", "parts");
+const MESSAGE_STORAGE = () => join(getDataHome(), "messages");
+const PART_STORAGE = () => join(getDataHome(), "parts");
+const PENDING_DIR = "graphiti-pending";
 
 const DEFAULT_THRESHOLD = 0.80;
 const MIN_TOKENS_FOR_COMPACTION = 50_000;
@@ -55,10 +58,19 @@ export interface CompactionOptions {
   getModelLimit?: (providerID: string, modelID: string) => number | undefined;
 }
 
+interface PendingPayload {
+  version: number;
+  timestamp: string;
+  projectNamespace: string;
+  summary: string;
+  type: string;
+  retryCount: number;
+}
+
 function createCompactionPrompt(projectMemories: string[]): string {
   const memoriesSection = projectMemories.length > 0 
     ? `
-## Project Knowledge (from Supermemory)
+## Project Knowledge (from Graphiti)
 The following project-specific knowledge should be preserved and referenced in the summary:
 ${projectMemories.map(m => `- ${m}`).join('\n')}
 `
@@ -98,13 +110,14 @@ This context is critical for maintaining continuity after compaction.
 }
 
 function getMessageDir(sessionID: string): string | null {
-  if (!existsSync(MESSAGE_STORAGE)) return null;
+  const messageStorage = MESSAGE_STORAGE();
+  if (!existsSync(messageStorage)) return null;
 
-  const directPath = join(MESSAGE_STORAGE, sessionID);
+  const directPath = join(messageStorage, sessionID);
   if (existsSync(directPath)) return directPath;
 
-  for (const dir of readdirSync(MESSAGE_STORAGE)) {
-    const sessionPath = join(MESSAGE_STORAGE, dir, sessionID);
+  for (const dir of readdirSync(messageStorage)) {
+    const sessionPath = join(messageStorage, dir, sessionID);
     if (existsSync(sessionPath)) return sessionPath;
   }
 
@@ -112,15 +125,16 @@ function getMessageDir(sessionID: string): string | null {
 }
 
 function getOrCreateMessageDir(sessionID: string): string {
-  if (!existsSync(MESSAGE_STORAGE)) {
-    mkdirSync(MESSAGE_STORAGE, { recursive: true });
+  const messageStorage = MESSAGE_STORAGE();
+  if (!existsSync(messageStorage)) {
+    mkdirSync(messageStorage, { recursive: true });
   }
 
-  const directPath = join(MESSAGE_STORAGE, sessionID);
+  const directPath = join(messageStorage, sessionID);
   if (existsSync(directPath)) return directPath;
 
-  for (const dir of readdirSync(MESSAGE_STORAGE)) {
-    const sessionPath = join(MESSAGE_STORAGE, dir, sessionID);
+  for (const dir of readdirSync(messageStorage)) {
+    const sessionPath = join(messageStorage, dir, sessionID);
     if (existsSync(sessionPath)) return sessionPath;
   }
 
@@ -218,7 +232,7 @@ function injectHookMessage(
   try {
     writeFileSync(join(messageDir, `${messageID}.json`), JSON.stringify(messageMeta, null, 2));
 
-    const partDir = join(PART_STORAGE, messageID);
+    const partDir = join(PART_STORAGE(), messageID);
     if (!existsSync(partDir)) {
       mkdirSync(partDir, { recursive: true });
     }
@@ -230,6 +244,41 @@ function injectHookMessage(
     log("[compaction] failed to inject hook message", { error: String(err) });
     return false;
   }
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("econnrefused") ||
+      message.includes("timeout") ||
+      message.includes("network") ||
+      message.includes("fetch") ||
+      message.includes("unreachable")
+    );
+  }
+  return false;
+}
+
+async function saveToPendingQueue(summary: string, projectNamespace: string): Promise<void> {
+  const pendingPath = join(getDataHome(), PENDING_DIR);
+  await mkdir(pendingPath, { recursive: true });
+
+  const timestamp = new Date().toISOString();
+  const hash = projectNamespace.slice(-8);
+  const filename = `${timestamp.replace(/[:.]/g, "-")}_${hash}.json`;
+
+  const payload: PendingPayload = {
+    version: 1,
+    timestamp,
+    projectNamespace,
+    summary,
+    type: "conversation",
+    retryCount: 0,
+  };
+
+  await writeFile(join(pendingPath, filename), JSON.stringify(payload, null, 2));
+  log("[compaction] Graphiti unreachable, saved to pending queue", { filename });
 }
 
 export interface CompactionContext {
@@ -248,7 +297,7 @@ export interface CompactionContext {
 
 export function createCompactionHook(
   ctx: CompactionContext,
-  tags: { user: string; project: string },
+  tags: { projectNamespace: string },
   options?: CompactionOptions
 ) {
   const state: CompactionState = {
@@ -260,11 +309,32 @@ export function createCompactionHook(
   const threshold = options?.threshold ?? DEFAULT_THRESHOLD;
   const getModelLimit = options?.getModelLimit;
 
+  let graphitiClient: GraphitiClient | null = null;
+
+  function getGraphitiClient(): GraphitiClient {
+    if (!graphitiClient) {
+      const config = getConfig();
+      graphitiClient = new GraphitiClient(config.graphitiUrl);
+    }
+    return graphitiClient;
+  }
+
   async function fetchProjectMemoriesForCompaction(): Promise<string[]> {
     try {
-      const result = await supermemoryClient.listMemories(tags.project, CONFIG.maxProjectMemories);
-      const memories = result.memories || [];
-      return memories.map((m: any) => m.summary || m.content || "").filter(Boolean);
+      const config = getConfig();
+      const client = getGraphitiClient();
+      const result = await client.getEpisodes({
+        groupIds: [tags.projectNamespace],
+        maxEpisodes: config.maxProjectMemories,
+      });
+
+      if (!result.success) {
+        log("[compaction] failed to fetch project memories", { error: result.error });
+        return [];
+      }
+
+      const episodes = result.data.episodes || [];
+      return episodes.map((ep) => ep.content || ep.name || "").filter(Boolean);
     } catch (err) {
       log("[compaction] failed to fetch project memories", { error: String(err) });
       return [];
@@ -297,20 +367,33 @@ export function createCompactionHook(
       return;
     }
 
+    const episodeBody = `[TYPE: conversation] [Session Summary]\n${summaryContent}`;
+
     try {
-      const result = await supermemoryClient.addMemory(
-        `[Session Summary]\n${summaryContent}`,
-        tags.project,
-        { type: "conversation" }
-      );
+      const client = getGraphitiClient();
+      const result = await client.addMemory({
+        name: "Session Summary",
+        episodeBody,
+        groupId: tags.projectNamespace,
+        source: "text",
+        sourceDescription: "Session compaction summary",
+      });
 
       if (result.success) {
-        log("[compaction] summary saved as memory", { sessionID, memoryId: result.id });
+        log("[compaction] summary saved as memory", { sessionID, episodeUuid: result.data.episode_uuid });
       } else {
-        log("[compaction] failed to save summary", { error: result.error });
+        if (result.isUnreachable) {
+          await saveToPendingQueue(summaryContent, tags.projectNamespace);
+        } else {
+          log("[compaction] failed to save summary", { error: result.error });
+        }
       }
     } catch (err) {
-      log("[compaction] failed to save summary", { error: String(err) });
+      if (isNetworkError(err)) {
+        await saveToPendingQueue(summaryContent, tags.projectNamespace);
+      } else {
+        log("[compaction] failed to save summary", { error: String(err) });
+      }
     }
   }
 
@@ -329,7 +412,6 @@ export function createCompactionHook(
     let providerID = lastAssistant.providerID ?? "";
     let agent: string | undefined;
 
-    // Fallback: find model/agent from stored messages if not available
     const messageDir = getMessageDir(sessionID);
     const storedMessage = messageDir ? findNearestMessageWithFields(messageDir) : null;
     
@@ -368,7 +450,7 @@ export function createCompactionHook(
     await ctx.client.tui.showToast({
       body: {
         title: "Preemptive Compaction",
-        message: `Context at ${(usageRatio * 100).toFixed(0)}% - compacting with Supermemory context...`,
+        message: `Context at ${(usageRatio * 100).toFixed(0)}% - compacting with Graphiti context...`,
         variant: "warning",
         duration: 3000,
       },
@@ -397,7 +479,7 @@ export function createCompactionHook(
       await ctx.client.tui.showToast({
         body: {
           title: "Compaction Complete",
-          message: "Session compacted with Supermemory context. Resuming...",
+          message: "Session compacted with Graphiti context. Resuming...",
           variant: "success",
           duration: 2000,
         },

@@ -1,58 +1,39 @@
-import type { ProfileResponse } from "supermemory/resources";
-import { CONFIG } from "../config.js";
+import type { Node, Episode, Fact } from "../types/graphiti.js";
 
-interface MemoryResultMinimal {
-  similarity: number;
-  memory?: string;
-  chunk?: string;
+interface FormatContextInput {
+  profile: Node[];
+  projectEpisodes: Episode[];
+  relevantNodes: Node[];
+  relevantFacts: Fact[];
 }
 
-interface MemoriesResponseMinimal {
-  results?: MemoryResultMinimal[];
-}
+export function formatContext(input: FormatContextInput): string {
+  const parts: string[] = ["[GRAPHITI]"];
 
-export function formatContextForPrompt(
-  profile: ProfileResponse | null,
-  userMemories: MemoriesResponseMinimal,
-  projectMemories: MemoriesResponseMinimal
-): string {
-  const parts: string[] = ["[SUPERMEMORY]"];
-
-  if (CONFIG.injectProfile && profile?.profile) {
-    const { static: staticFacts, dynamic: dynamicFacts } = profile.profile;
-
-    if (staticFacts.length > 0) {
-      parts.push("\nUser Profile:");
-      staticFacts.slice(0, CONFIG.maxProfileItems).forEach((fact) => {
-        parts.push(`- ${fact}`);
-      });
-    }
-
-    if (dynamicFacts.length > 0) {
-      parts.push("\nRecent Context:");
-      dynamicFacts.slice(0, CONFIG.maxProfileItems).forEach((fact) => {
-        parts.push(`- ${fact}`);
-      });
-    }
-  }
-
-  const projectResults = projectMemories.results || [];
-  if (projectResults.length > 0) {
-    parts.push("\nProject Knowledge:");
-    projectResults.forEach((mem) => {
-      const similarity = Math.round(mem.similarity * 100);
-      const content = mem.memory || mem.chunk || "";
-      parts.push(`- [${similarity}%] ${content}`);
+  // User Profile section
+  if (input.profile.length > 0) {
+    parts.push("\nUser Profile:");
+    input.profile.forEach((node) => {
+      parts.push(`- ${node.summary}`);
     });
   }
 
-  const userResults = userMemories.results || [];
-  if (userResults.length > 0) {
+  // Project Knowledge section
+  if (input.projectEpisodes.length > 0) {
+    parts.push("\nProject Knowledge:");
+    input.projectEpisodes.forEach((episode) => {
+      parts.push(`- ${episode.content}`);
+    });
+  }
+
+  // Relevant Memories section
+  if (input.relevantNodes.length > 0 || input.relevantFacts.length > 0) {
     parts.push("\nRelevant Memories:");
-    userResults.forEach((mem) => {
-      const similarity = Math.round(mem.similarity * 100);
-      const content = mem.memory || mem.chunk || "";
-      parts.push(`- [${similarity}%] ${content}`);
+    input.relevantNodes.forEach((node) => {
+      parts.push(`- ${node.summary}`);
+    });
+    input.relevantFacts.forEach((fact) => {
+      parts.push(`- ${fact.fact}`);
     });
   }
 

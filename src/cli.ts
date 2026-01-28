@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import * as readline from "node:readline";
 import { stripJsoncComments } from "./services/jsonc.js";
+import { getConfigHome } from "./services/paths.js";
 
-const OPENCODE_CONFIG_DIR = join(homedir(), ".config", "opencode");
+const OPENCODE_CONFIG_DIR = getConfigHome();
 const OPENCODE_COMMAND_DIR = join(OPENCODE_CONFIG_DIR, "command");
 const OH_MY_OPENCODE_CONFIG = join(OPENCODE_CONFIG_DIR, "oh-my-opencode.json");
-const PLUGIN_NAME = "opencode-supermemory@latest";
+const PLUGIN_NAME = "opencode-graphiti";
 
-const SUPERMEMORY_INIT_COMMAND = `---
-description: Initialize Supermemory with comprehensive codebase knowledge
+const GRAPHITI_INIT_COMMAND = `---
+description: Initialize Graphiti with comprehensive codebase knowledge
 ---
 
-# Initializing Supermemory
+# Initializing Graphiti
 
 You are initializing persistent memory for this codebase. This is not just data collection - you're building context that will make you significantly more effective across all future sessions.
 
@@ -111,10 +111,10 @@ Good (thorough):
 
 ## Saving Memories
 
-Use the \`supermemory\` tool for each distinct insight:
+Use the \`graphiti\` tool for each distinct insight:
 
 \`\`\`
-supermemory(mode: "add", content: "...", type: "...", scope: "project")
+graphiti(mode: "add", content: "...", type: "...", scope: "project")
 \`\`\`
 
 **Types:**
@@ -155,7 +155,7 @@ Then ask: "I've initialized memory with X insights. Want me to continue refining
 ## Your Task
 
 1. Ask upfront questions (research depth, rules, preferences)
-2. Check existing memories: \`supermemory(mode: "list", scope: "project")\`
+2. Check existing memories: \`graphiti(mode: "list", scope: "project")\`
 3. Research based on chosen depth
 4. Save memories incrementally as you discover insights
 5. Reflect and verify completeness
@@ -193,13 +193,13 @@ function findOpencodeConfig(): string | null {
 }
 
 function addPluginToConfig(configPath: string): boolean {
-  try {
-    const content = readFileSync(configPath, "utf-8");
-    
-    if (content.includes("opencode-supermemory")) {
-      console.log("✓ Plugin already registered in config");
-      return true;
-    }
+   try {
+     const content = readFileSync(configPath, "utf-8");
+     
+     if (content.includes("opencode-graphiti")) {
+       console.log("✓ Plugin already registered in config");
+       return true;
+     }
 
     const jsonContent = stripJsoncComments(content);
     let config: Record<string, unknown>;
@@ -262,13 +262,13 @@ function createNewConfig(): boolean {
 }
 
 function createCommand(): boolean {
-  mkdirSync(OPENCODE_COMMAND_DIR, { recursive: true });
-  const commandPath = join(OPENCODE_COMMAND_DIR, "supermemory-init.md");
+   mkdirSync(OPENCODE_COMMAND_DIR, { recursive: true });
+   const commandPath = join(OPENCODE_COMMAND_DIR, "graphiti-init.md");
 
-  writeFileSync(commandPath, SUPERMEMORY_INIT_COMMAND);
-  console.log(`✓ Created /supermemory-init command`);
-  return true;
-}
+   writeFileSync(commandPath, GRAPHITI_INIT_COMMAND);
+   console.log(`✓ Created /graphiti-init command`);
+   return true;
+ }
 
 function isOhMyOpencodeInstalled(): boolean {
   const configPath = findOpencodeConfig();
@@ -325,7 +325,7 @@ interface InstallOptions {
 }
 
 async function install(options: InstallOptions): Promise<number> {
-  console.log("\n🧠 opencode-supermemory installer\n");
+   console.log("\n🧠 opencode-graphiti installer\n");
 
   const rl = options.tui ? createReadline() : null;
 
@@ -357,30 +357,30 @@ async function install(options: InstallOptions): Promise<number> {
     }
   }
 
-  // Step 2: Create /supermemory-init command
-  console.log("\nStep 2: Create /supermemory-init command");
-  if (options.tui) {
-    const shouldCreate = await confirm(rl!, "Add /supermemory-init command?");
-    if (!shouldCreate) {
-      console.log("Skipped.");
-    } else {
-      createCommand();
-    }
-  } else {
-    createCommand();
-  }
+   // Step 2: Create /graphiti-init command
+   console.log("\nStep 2: Create /graphiti-init command");
+   if (options.tui) {
+     const shouldCreate = await confirm(rl!, "Add /graphiti-init command?");
+     if (!shouldCreate) {
+       console.log("Skipped.");
+     } else {
+       createCommand();
+     }
+   } else {
+     createCommand();
+   }
 
   // Step 3: Configure Oh My OpenCode (if installed)
   if (isOhMyOpencodeInstalled()) {
     console.log("\nStep 3: Configure Oh My OpenCode");
     console.log("Detected Oh My OpenCode plugin.");
-    console.log("Supermemory handles context compaction, so the built-in context-window-limit-recovery hook should be disabled.");
-    
-    if (isAutoCompactAlreadyDisabled()) {
-      console.log("✓ anthropic-context-window-limit-recovery hook already disabled");
-    } else {
-      if (options.tui) {
-        const shouldDisable = await confirm(rl!, "Disable anthropic-context-window-limit-recovery hook to let Supermemory handle context?");
+     console.log("Graphiti handles context compaction, so the built-in context-window-limit-recovery hook should be disabled.");
+     
+     if (isAutoCompactAlreadyDisabled()) {
+       console.log("✓ anthropic-context-window-limit-recovery hook already disabled");
+     } else {
+       if (options.tui) {
+         const shouldDisable = await confirm(rl!, "Disable anthropic-context-window-limit-recovery hook to let Graphiti handle context?");
         if (!shouldDisable) {
           console.log("Skipped.");
         } else {
@@ -394,36 +394,40 @@ async function install(options: InstallOptions): Promise<number> {
     }
   }
 
-  // Step 4: API key instructions
-  console.log("\n" + "─".repeat(50));
-  console.log("\n🔑 Final step: Set your API key\n");
-  console.log("Get your API key from: https://console.supermemory.ai");
-  console.log("\nThen add to your shell profile:\n");
-  console.log('  export SUPERMEMORY_API_KEY="sm_..."');
-  console.log("\nOr create ~/.config/opencode/supermemory.jsonc:\n");
-  console.log('  { "apiKey": "sm_..." }');
-  console.log("\n" + "─".repeat(50));
-  console.log("\n✓ Setup complete! Restart OpenCode to activate.\n");
+   // Step 4: Environment variables and config instructions
+   console.log("\n" + "─".repeat(50));
+   console.log("\n🔑 Final step: Configure Graphiti\n");
+   console.log("Set required environment variables:\n");
+   console.log('  export GRAPHITI_URL="http://your-graphiti-server:8000"');
+   console.log('  export GRAPHITI_GROUP_ID="your-group-id"');
+   console.log("\nOr create ~/.config/opencode/graphiti.jsonc:\n");
+   console.log('  {');
+   console.log('    "graphitiUrl": "http://your-graphiti-server:8000",');
+   console.log('    "groupId": "your-group-id"');
+   console.log('  }');
+   console.log("\n" + "─".repeat(50));
+   console.log("\n✓ Setup complete! Restart OpenCode to activate.");
+   console.log("Then run /graphiti-init to index your codebase.\n");
 
   if (rl) rl.close();
   return 0;
 }
 
 function printHelp(): void {
-  console.log(`
-opencode-supermemory - Persistent memory for OpenCode agents
-
-Commands:
-  install                    Install and configure the plugin
-    --no-tui                 Run in non-interactive mode (for LLM agents)
-    --disable-context-recovery   Disable Oh My OpenCode's context-window-limit-recovery hook (use with --no-tui)
-
-Examples:
-  bunx opencode-supermemory@latest install
-  bunx opencode-supermemory@latest install --no-tui
-  bunx opencode-supermemory@latest install --no-tui --disable-context-recovery
-`);
-}
+   console.log(`
+ opencode-graphiti - Persistent memory for OpenCode agents
+ 
+ Commands:
+   install                    Install and configure the plugin
+     --no-tui                 Run in non-interactive mode (for LLM agents)
+     --disable-context-recovery   Disable Oh My OpenCode's context-window-limit-recovery hook (use with --no-tui)
+ 
+ Examples:
+   bunx opencode-graphiti install
+   bunx opencode-graphiti install --no-tui
+   bunx opencode-graphiti install --no-tui --disable-context-recovery
+ `);
+ }
 
 const args = process.argv.slice(2);
 

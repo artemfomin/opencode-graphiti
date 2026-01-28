@@ -2,23 +2,25 @@ import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import type { Part } from "@opencode-ai/sdk";
 import { tool } from "@opencode-ai/plugin";
 
-import { supermemoryClient } from "./services/client.js";
-import { formatContextForPrompt } from "./services/context.js";
-import { getTags } from "./services/tags.js";
+import { GraphitiClient } from "./services/graphiti-client.js";
+import { formatContext } from "./services/context.js";
+import { getProjectNamespace, getProfileNamespace } from "./services/namespace.js";
 import { stripPrivateContent, isFullyPrivate } from "./services/privacy.js";
-import { createCompactionHook, type CompactionContext } from "./services/compaction.js";
-
-import { isConfigured, CONFIG } from "./config.js";
+import { initConfig, getConfig, isConfigReady, type ConfigState } from "./config.js";
 import { log } from "./services/logger.js";
 import type { MemoryScope, MemoryType } from "./types/index.js";
+import type { Episode, Node, Fact } from "./types/graphiti.js";
 
 const CODE_BLOCK_PATTERN = /```[\s\S]*?```/g;
 const INLINE_CODE_PATTERN = /`[^`]+`/g;
+const TYPE_PREFIX_PATTERN = /^\[TYPE:\s*([^\]]+)\]\s*/;
 
-const MEMORY_KEYWORD_PATTERN = new RegExp(`\\b(${CONFIG.keywordPatterns.join("|")})\\b`, "i");
+function getKeywordPattern(patterns: string[]): RegExp {
+  return new RegExp(`\\b(${patterns.join("|")})\\b`, "i");
+}
 
 const MEMORY_NUDGE_MESSAGE = `[MEMORY TRIGGER DETECTED]
-The user wants you to remember something. You MUST use the \`supermemory\` tool with \`mode: "add"\` to save this information.
+The user wants you to remember something. You MUST use the \`graphiti\` tool with \`mode: "add"\` to save this information.
 
 Extract the key information the user wants remembered and save it as a concise, searchable memory.
 - Use \`scope: "project"\` for project-specific preferences (e.g., "run lint with tests")
@@ -31,22 +33,70 @@ function removeCodeBlocks(text: string): string {
   return text.replace(CODE_BLOCK_PATTERN, "").replace(INLINE_CODE_PATTERN, "");
 }
 
-function detectMemoryKeyword(text: string): boolean {
+function detectMemoryKeyword(text: string, patterns: string[]): boolean {
   const textWithoutCode = removeCodeBlocks(text);
-  return MEMORY_KEYWORD_PATTERN.test(textWithoutCode);
+  const pattern = getKeywordPattern(patterns);
+  return pattern.test(textWithoutCode);
 }
 
-export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
-  const { directory } = ctx;
-  const tags = getTags(directory);
-  const injectedSessions = new Set<string>();
-  log("Plugin init", { directory, tags, configured: isConfigured() });
+function generateEpisodeName(content: string): string {
+  return content.slice(0, 50).replace(/\n/g, " ").trim() + (content.length > 50 ? "..." : "");
+}
 
-  if (!isConfigured()) {
-    log("Plugin disabled - SUPERMEMORY_API_KEY not set");
+function generateTypedContent(content: string, type: MemoryType): string {
+  return `[TYPE: ${type}] ${content}`;
+}
+
+interface ParsedContent {
+  type: string;
+  content: string;
+}
+
+function parseTypePrefix(rawContent: string): ParsedContent {
+  const match = rawContent.match(TYPE_PREFIX_PATTERN);
+  if (match && match[1]) {
+    return {
+      type: match[1].trim(),
+      content: rawContent.slice(match[0].length),
+    };
+  }
+  return {
+    type: "unknown",
+    content: rawContent,
+  };
+}
+
+function resolveGroupId(
+  scope: MemoryScope | undefined,
+  projectDir: string,
+  profileGroupId: string
+): string {
+  if (scope === "user") {
+    return profileGroupId;
+  }
+  return getProjectNamespace(projectDir);
+}
+
+export const GraphitiPlugin: Plugin = async (ctx: PluginInput) => {
+  const { directory } = ctx;
+  const configState = initConfig(directory);
+  const injectedSessions = new Set<string>();
+
+  log("Plugin init", {
+    directory,
+    configured: configState.status === "ready",
+    reason: configState.status !== "ready" ? (configState as { reason: string }).reason : undefined,
+  });
+
+  if (configState.status !== "ready") {
+    log("Plugin disabled", { reason: (configState as { reason: string }).reason });
   }
 
-  // Fetch model limits once at plugin init
+  let graphitiClient: GraphitiClient | null = null;
+  if (configState.status === "ready") {
+    graphitiClient = new GraphitiClient(configState.config.graphitiUrl);
+  }
+
   const modelLimits = new Map<string, number>();
 
   (async () => {
@@ -69,21 +119,11 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
     }
   })();
 
-  const getModelLimit = (providerID: string, modelID: string): number | undefined => {
-    return modelLimits.get(`${providerID}/${modelID}`);
-  };
-
-  const compactionHook = isConfigured() && ctx.client
-    ? createCompactionHook(ctx as CompactionContext, tags, {
-        threshold: CONFIG.compactionThreshold,
-        getModelLimit,
-      })
-    : null;
-
   return {
     "chat.message": async (input, output) => {
-      if (!isConfigured()) return;
+      if (configState.status !== "ready" || !graphitiClient) return;
 
+      const config = configState.config;
       const start = Date.now();
 
       try {
@@ -109,10 +149,10 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
           textPartsCount: textParts.length,
         });
 
-        if (detectMemoryKeyword(userMessage)) {
+        if (detectMemoryKeyword(userMessage, config.keywordPatterns || [])) {
           log("chat.message: memory keyword detected");
           const nudgePart: Part = {
-            id: `supermemory-nudge-${Date.now()}`,
+            id: `graphiti-nudge-${Date.now()}`,
             sessionID: input.sessionID,
             messageID: output.message.id,
             type: "text",
@@ -127,37 +167,52 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
         if (isFirstMessage) {
           injectedSessions.add(input.sessionID);
 
-          const [profileResult, userMemoriesResult, projectMemoriesListResult] = await Promise.all([
-            supermemoryClient.getProfile(tags.user, userMessage),
-            supermemoryClient.searchMemories(userMessage, tags.user),
-            supermemoryClient.listMemories(tags.project, CONFIG.maxProjectMemories),
-          ]);
+          const projectNamespace = getProjectNamespace(directory);
+          const profileGroupId = config.profileGroupId!;
 
-          const profile = profileResult.success ? profileResult : null;
-          const userMemories = userMemoriesResult.success ? userMemoriesResult : { results: [] };
-          const projectMemoriesList = projectMemoriesListResult.success ? projectMemoriesListResult : { memories: [] };
+          const [profileResult, projectEpisodesResult, relevantNodesResult, relevantFactsResult] =
+            await Promise.all([
+              config.injectProfile
+                ? graphitiClient.searchNodes("user preferences", {
+                    groupIds: [profileGroupId],
+                    maxNodes: config.maxProfileItems,
+                  })
+                : Promise.resolve({ success: true as const, data: { nodes: [] } }),
+              graphitiClient.getEpisodes({
+                groupIds: [projectNamespace],
+                maxEpisodes: config.maxProjectMemories,
+              }),
+              graphitiClient.searchNodes(userMessage, {
+                groupIds: [projectNamespace],
+                maxNodes: config.maxMemories,
+              }),
+              graphitiClient.searchFacts(userMessage, {
+                groupIds: [projectNamespace],
+                maxFacts: config.maxMemories,
+              }),
+            ]);
 
-          const projectMemories = {
-            results: (projectMemoriesList.memories || []).map((m: any) => ({
-              id: m.id,
-              memory: m.summary,
-              similarity: 1,
-              title: m.title,
-              metadata: m.metadata,
-            })),
-            total: projectMemoriesList.memories?.length || 0,
-            timing: 0,
-          };
+          const profile: Node[] = profileResult.success ? profileResult.data.nodes : [];
+          const projectEpisodes: Episode[] = projectEpisodesResult.success
+            ? projectEpisodesResult.data.episodes
+            : [];
+          const relevantNodes: Node[] = relevantNodesResult.success
+            ? relevantNodesResult.data.nodes
+            : [];
+          const relevantFacts: Fact[] = relevantFactsResult.success
+            ? relevantFactsResult.data.facts
+            : [];
 
-          const memoryContext = formatContextForPrompt(
+          const memoryContext = formatContext({
             profile,
-            userMemories,
-            projectMemories
-          );
+            projectEpisodes,
+            relevantNodes,
+            relevantFacts,
+          });
 
           if (memoryContext) {
             const contextPart: Part = {
-              id: `supermemory-context-${Date.now()}`,
+              id: `graphiti-context-${Date.now()}`,
               sessionID: input.sessionID,
               messageID: output.message.id,
               type: "text",
@@ -174,20 +229,17 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
             });
           }
         }
-
       } catch (error) {
         log("chat.message: ERROR", { error: String(error) });
       }
     },
 
     tool: {
-      supermemory: tool({
+      graphiti: tool({
         description:
-          "Manage and query the Supermemory persistent memory system. Use 'search' to find relevant memories, 'add' to store new knowledge, 'profile' to view user profile, 'list' to see recent memories, 'forget' to remove a memory.",
+          "Manage and query the Graphiti persistent memory system. Use 'search' to find relevant memories, 'add' to store new knowledge, 'profile' to view user profile, 'list' to see recent memories, 'forget' to remove a memory.",
         args: {
-          mode: tool.schema
-            .enum(["add", "search", "profile", "list", "forget", "help"])
-            .optional(),
+          mode: tool.schema.enum(["add", "search", "profile", "list", "forget", "help"]).optional(),
           content: tool.schema.string().optional(),
           query: tool.schema.string().optional(),
           type: tool.schema
@@ -213,14 +265,17 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
           memoryId?: string;
           limit?: number;
         }) {
-          if (!isConfigured()) {
+          if (configState.status !== "ready" || !graphitiClient) {
             return JSON.stringify({
               success: false,
               error:
-                "SUPERMEMORY_API_KEY not set. Set it in your environment to use Supermemory.",
+                configState.status === "ready"
+                  ? "Graphiti client not initialized"
+                  : `Graphiti not configured: ${(configState as { reason: string }).reason}`,
             });
           }
 
+          const config = configState.config;
           const mode = args.mode || "help";
 
           try {
@@ -228,46 +283,35 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
               case "help": {
                 return JSON.stringify({
                   success: true,
-                  message: "Supermemory Usage Guide",
-                  commands: [
-                    {
-                      command: "add",
-                      description: "Store a new memory",
-                      args: ["content", "type?", "scope?"],
-                    },
-                    {
-                      command: "search",
-                      description: "Search memories",
-                      args: ["query", "scope?"],
-                    },
-                    {
-                      command: "profile",
-                      description: "View user profile",
-                      args: ["query?"],
-                    },
-                    {
-                      command: "list",
-                      description: "List recent memories",
-                      args: ["scope?", "limit?"],
-                    },
-                    {
-                      command: "forget",
-                      description: "Remove a memory",
-                      args: ["memoryId", "scope?"],
-                    },
-                  ],
-                  scopes: {
-                    user: "Cross-project preferences and knowledge",
-                    project: "Project-specific knowledge (default)",
-                  },
-                  types: [
-                    "project-config",
-                    "architecture",
-                    "error-solution",
-                    "preference",
-                    "learned-pattern",
-                    "conversation",
-                  ],
+                  help: `Graphiti Memory System
+
+Commands:
+- add: Store a new memory
+  Args: content (required), type?, scope?
+  
+- search: Search memories semantically
+  Args: query (required), scope?
+  
+- profile: View user profile preferences
+  Args: query? (filters profile results)
+  
+- list: List recent memories
+  Args: scope?, limit?
+  
+- forget: Remove a memory by ID
+  Args: memoryId (required)
+
+Scopes:
+- user: Cross-project preferences and knowledge
+- project: Project-specific knowledge (default)
+
+Types:
+- project-config: Build commands, test setup
+- architecture: Code structure, patterns
+- error-solution: Bugs and fixes
+- preference: User preferences
+- learned-pattern: Development patterns
+- conversation: Important discussion points`,
                 });
               }
 
@@ -283,19 +327,25 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
                 if (isFullyPrivate(args.content)) {
                   return JSON.stringify({
                     success: false,
-                    error: "Cannot store fully private content",
+                    error: "Content is fully private and cannot be stored",
                   });
                 }
 
                 const scope = args.scope || "project";
-                const containerTag =
-                  scope === "user" ? tags.user : tags.project;
+                const type = args.type || "learned-pattern";
+                const groupId = resolveGroupId(scope, directory, config.profileGroupId!);
 
-                const result = await supermemoryClient.addMemory(
-                  sanitizedContent,
-                  containerTag,
-                  { type: args.type }
-                );
+                const episodeBody = generateTypedContent(sanitizedContent, type);
+                const name = generateEpisodeName(sanitizedContent);
+                const uuid = crypto.randomUUID();
+
+                const result = await graphitiClient.addMemory({
+                  name,
+                  episodeBody,
+                  groupId,
+                  source: "text",
+                  uuid,
+                });
 
                 if (!result.success) {
                   return JSON.stringify({
@@ -306,10 +356,10 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
 
                 return JSON.stringify({
                   success: true,
-                  message: `Memory added to ${scope} scope`,
-                  id: result.id,
+                  memoryId: uuid,
+                  message: "Memory saved successfully",
                   scope,
-                  type: args.type,
+                  type,
                 });
               }
 
@@ -322,122 +372,135 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
                 }
 
                 const scope = args.scope;
+                let groupIds: string[];
 
                 if (scope === "user") {
-                  const result = await supermemoryClient.searchMemories(
-                    args.query,
-                    tags.user
-                  );
-                  if (!result.success) {
-                    return JSON.stringify({
-                      success: false,
-                      error: result.error || "Failed to search memories",
-                    });
-                  }
-                  return formatSearchResults(args.query, scope, result, args.limit);
+                  groupIds = [config.profileGroupId!];
+                } else if (scope === "project") {
+                  groupIds = [getProjectNamespace(directory)];
+                } else {
+                  groupIds = [config.profileGroupId!, getProjectNamespace(directory)];
                 }
 
-                if (scope === "project") {
-                  const result = await supermemoryClient.searchMemories(
-                    args.query,
-                    tags.project
-                  );
-                  if (!result.success) {
-                    return JSON.stringify({
-                      success: false,
-                      error: result.error || "Failed to search memories",
-                    });
-                  }
-                  return formatSearchResults(args.query, scope, result, args.limit);
-                }
-
-                const [userResult, projectResult] = await Promise.all([
-                  supermemoryClient.searchMemories(args.query, tags.user),
-                  supermemoryClient.searchMemories(args.query, tags.project),
+                const [nodesResult, factsResult] = await Promise.all([
+                  graphitiClient.searchNodes(args.query, {
+                    groupIds,
+                    maxNodes: args.limit || 10,
+                  }),
+                  graphitiClient.searchFacts(args.query, {
+                    groupIds,
+                    maxFacts: args.limit || 10,
+                  }),
                 ]);
 
-                if (!userResult.success || !projectResult.success) {
-                  return JSON.stringify({
-                    success: false,
-                    error: userResult.error || projectResult.error || "Failed to search memories",
-                  });
+                const results: Array<{ content: string; type: string; createdAt: string }> = [];
+                let warning: string | undefined;
+
+                if (nodesResult.success) {
+                  for (const node of nodesResult.data.nodes) {
+                    const parsed = parseTypePrefix(node.summary);
+                    results.push({
+                      content: parsed.content,
+                      type: parsed.type,
+                      createdAt: node.created_at,
+                    });
+                  }
+                } else if (nodesResult.isUnreachable) {
+                  warning = "Graphiti service temporarily unavailable";
                 }
 
-                const combined = [
-                  ...(userResult.results || []).map((r) => ({
-                    ...r,
-                    scope: "user" as const,
-                  })),
-                  ...(projectResult.results || []).map((r) => ({
-                    ...r,
-                    scope: "project" as const,
-                  })),
-                ].sort((a, b) => b.similarity - a.similarity);
+                if (factsResult.success) {
+                  for (const fact of factsResult.data.facts) {
+                    results.push({
+                      content: fact.fact,
+                      type: "fact",
+                      createdAt: fact.created_at,
+                    });
+                  }
+                }
 
                 return JSON.stringify({
                   success: true,
-                  query: args.query,
-                  count: combined.length,
-                  results: combined.slice(0, args.limit || 10).map((r) => ({
-                    id: r.id,
-                    content: r.memory || r.chunk,
-                    similarity: Math.round(r.similarity * 100),
-                    scope: r.scope,
-                  })),
+                  results,
+                  ...(warning && { warning }),
                 });
               }
 
               case "profile": {
-                const result = await supermemoryClient.getProfile(
-                  tags.user,
-                  args.query
-                );
+                const query = args.query || "user preferences";
+                const profileGroupId = config.profileGroupId!;
+
+                const result = await graphitiClient.searchNodes(query, {
+                  groupIds: [profileGroupId],
+                  maxNodes: config.maxProfileItems,
+                });
 
                 if (!result.success) {
+                  if (result.isUnreachable) {
+                    return JSON.stringify({
+                      success: true,
+                      profile: [],
+                      warning: "Graphiti service temporarily unavailable",
+                    });
+                  }
                   return JSON.stringify({
                     success: false,
                     error: result.error || "Failed to fetch profile",
                   });
                 }
 
+                const profile = result.data.nodes.map((node) => ({
+                  fact: node.summary || node.name,
+                  createdAt: node.created_at,
+                }));
+
                 return JSON.stringify({
                   success: true,
-                  profile: {
-                    static: result.profile?.static || [],
-                    dynamic: result.profile?.dynamic || [],
-                  },
+                  profile,
                 });
               }
 
               case "list": {
                 const scope = args.scope || "project";
                 const limit = args.limit || 20;
-                const containerTag =
-                  scope === "user" ? tags.user : tags.project;
+                const groupId = resolveGroupId(scope, directory, config.profileGroupId!);
 
-                const result = await supermemoryClient.listMemories(
-                  containerTag,
-                  limit
-                );
+                const result = await graphitiClient.getEpisodes({
+                  groupIds: [groupId],
+                  maxEpisodes: limit,
+                });
 
                 if (!result.success) {
+                  if (result.isUnreachable) {
+                    return JSON.stringify({
+                      success: true,
+                      scope,
+                      count: 0,
+                      memories: [],
+                      warning: "Graphiti service temporarily unavailable",
+                    });
+                  }
                   return JSON.stringify({
                     success: false,
                     error: result.error || "Failed to list memories",
                   });
                 }
 
-                const memories = result.memories || [];
+                const memories = result.data.episodes.map((episode) => {
+                  const parsed = parseTypePrefix(episode.content);
+                  return {
+                    memoryId: episode.uuid,
+                    content: parsed.content,
+                    type: parsed.type,
+                    createdAt: episode.created_at,
+                  };
+                });
+
                 return JSON.stringify({
                   success: true,
                   scope,
                   count: memories.length,
-                  memories: memories.map((m) => ({
-                    id: m.id,
-                    content: m.summary,
-                    createdAt: m.createdAt,
-                    metadata: m.metadata,
-                  })),
+                  memories,
                 });
               }
 
@@ -449,11 +512,7 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
                   });
                 }
 
-                const scope = args.scope || "project";
-
-                const result = await supermemoryClient.deleteMemory(
-                  args.memoryId
-                );
+                const result = await graphitiClient.deleteEpisode(args.memoryId);
 
                 if (!result.success) {
                   return JSON.stringify({
@@ -464,7 +523,7 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
 
                 return JSON.stringify({
                   success: true,
-                  message: `Memory ${args.memoryId} removed from ${scope} scope`,
+                  message: "Memory deleted successfully",
                 });
               }
 
@@ -484,30 +543,6 @@ export const SupermemoryPlugin: Plugin = async (ctx: PluginInput) => {
       }),
     },
 
-    event: async (input: { event: { type: string; properties?: unknown } }) => {
-      if (compactionHook) {
-        await compactionHook.event(input);
-      }
-    },
+    event: async () => {},
   };
 };
-
-function formatSearchResults(
-  query: string,
-  scope: string | undefined,
-  results: { results?: Array<{ id: string; memory?: string; chunk?: string; similarity: number }> },
-  limit?: number
-): string {
-  const memoryResults = results.results || [];
-  return JSON.stringify({
-    success: true,
-    query,
-    scope,
-    count: memoryResults.length,
-    results: memoryResults.slice(0, limit || 10).map((r) => ({
-      id: r.id,
-      content: r.memory || r.chunk,
-      similarity: Math.round(r.similarity * 100),
-    })),
-  });
-}
