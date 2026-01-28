@@ -1,7 +1,7 @@
 {
   "name": "opencode-graphiti",
   "version": "0.1.8",
-  "description": "OpenCode plugin that gives coding agents persistent memory using Supermemory",
+  "description": "OpenCode plugin for persistent memory using Graphiti MCP server",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,16 +17,17 @@
   "keywords": [
     "opencode",
     "plugin",
-    "supermemory",
+    "graphiti",
     "memory",
     "ai",
-    "coding-agent"
+    "coding-agent",
+    "mcp"
   ],
-  "author": "Supermemory",
+  "author": "",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/supermemoryai/opencode-supermemory"
+    "url": "https://github.com/artemfomin/opencode-graphiti"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.0.162",

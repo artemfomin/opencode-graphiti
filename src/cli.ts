@@ -397,13 +397,16 @@ async function install(options: InstallOptions): Promise<number> {
    // Step 4: Environment variables and config instructions
    console.log("\n" + "─".repeat(50));
    console.log("\n🔑 Final step: Configure Graphiti\n");
-   console.log("Set required environment variables:\n");
+   console.log("Option 1 - Use userId (recommended, auto-derives groupId per project):\n");
+   console.log('  export GRAPHITI_URL="http://your-graphiti-server:8000"');
+   console.log('  export GRAPHITI_USER_ID="your-user-id"');
+   console.log("\nOption 2 - Use explicit groupId:\n");
    console.log('  export GRAPHITI_URL="http://your-graphiti-server:8000"');
    console.log('  export GRAPHITI_GROUP_ID="your-group-id"');
    console.log("\nOr create ~/.config/opencode/graphiti.jsonc:\n");
    console.log('  {');
    console.log('    "graphitiUrl": "http://your-graphiti-server:8000",');
-   console.log('    "groupId": "your-group-id"');
+   console.log('    "userId": "your-user-id"');
    console.log('  }');
    console.log("\n" + "─".repeat(50));
    console.log("\n✓ Setup complete! Restart OpenCode to activate.");
