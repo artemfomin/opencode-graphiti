@@ -380,7 +380,7 @@ export function createCompactionHook(
       });
 
       if (result.success) {
-        log("[compaction] summary saved as memory", { sessionID, episodeUuid: result.data.episode_uuid });
+        log("[compaction] summary saved as memory", { sessionID });
       } else {
         if (result.isUnreachable) {
           await saveToPendingQueue(summaryContent, tags.projectNamespace);

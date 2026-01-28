@@ -224,7 +224,11 @@ export class GraphitiClient {
         };
       }
 
-      const data = result.structuredContent as T;
+      // Server wraps response in { result: ... }, unwrap it
+      const structuredContent = result.structuredContent as { result?: T } | T;
+      const data = (structuredContent && typeof structuredContent === 'object' && 'result' in structuredContent)
+        ? (structuredContent as { result: T }).result
+        : structuredContent as T;
       return { success: true, data };
     } catch (error) {
       const errorMessage =
@@ -239,7 +243,7 @@ export class GraphitiClient {
 
   async addMemory(
     params: AddMemoryParams
-  ): Promise<GraphitiResult<{ episode_uuid: string }>> {
+  ): Promise<GraphitiResult<{ message: string }>> {
     const args: Record<string, unknown> = {
       name: params.name,
       episode_body: params.episodeBody,
@@ -290,13 +294,13 @@ export class GraphitiClient {
     return this.callTool("get_episodes", args);
   }
 
-  async deleteEpisode(uuid: string): Promise<GraphitiResult<{ deleted: boolean }>> {
+  async deleteEpisode(uuid: string): Promise<GraphitiResult<{ message: string }>> {
     return this.callTool("delete_episode", { uuid });
   }
 
   async clearGraph(
     params?: ClearGraphParams
-  ): Promise<GraphitiResult<{ cleared: boolean }>> {
+  ): Promise<GraphitiResult<{ message: string }>> {
     const args: Record<string, unknown> = {};
 
     if (params?.groupIds) args.group_ids = params.groupIds;

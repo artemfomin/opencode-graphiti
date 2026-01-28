@@ -171,12 +171,12 @@ describe("GraphitiPlugin", () => {
       expect(parsed.error).toContain("content");
     });
 
-    it("generates UUID client-side and returns as memoryId", async () => {
+    it("returns success without memoryId (server generates uuid async)", async () => {
       mockFetch.mockImplementationOnce(() =>
         Promise.resolve(createInitializeResponse("session-123"))
       );
       mockFetch.mockImplementationOnce(() =>
-        Promise.resolve(createToolResponse({ episode_uuid: "server-uuid" }))
+        Promise.resolve(createToolResponse({ message: "Episode queued" }))
       );
 
       const { GraphitiPlugin } = await import("./index.js");
@@ -188,11 +188,8 @@ describe("GraphitiPlugin", () => {
       const parsed = JSON.parse(result as string);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.memoryId).toBeDefined();
-      expect(typeof parsed.memoryId).toBe("string");
-      expect(parsed.memoryId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      );
+      expect(parsed.message).toBe("Memory queued for processing");
+      expect(parsed.memoryId).toBeUndefined();
     });
 
     it("stores type as [TYPE: x] prefix in episode_body", async () => {
@@ -335,11 +332,10 @@ describe("GraphitiPlugin", () => {
       const parsed = JSON.parse(result as string);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.memoryId).toBeDefined();
-      expect(parsed.message).toBe("Memory saved successfully");
+      expect(parsed.message).toBe("Memory queued for processing");
       expect(parsed.scope).toBe("user");
       expect(parsed.type).toBe("preference");
-      expect(parsed.id).toBeUndefined();
+      expect(parsed.memoryId).toBeUndefined();
     });
   });
 

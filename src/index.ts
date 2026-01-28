@@ -8,6 +8,7 @@ import { getProjectNamespace, getProfileNamespace } from "./services/namespace.j
 import { stripPrivateContent, isFullyPrivate } from "./services/privacy.js";
 import { initConfig, getConfig, isConfigReady, type ConfigState } from "./config.js";
 import { log } from "./services/logger.js";
+import { createCompactionHook, type CompactionContext } from "./services/compaction.js";
 import type { MemoryScope, MemoryType } from "./types/index.js";
 import type { Episode, Node, Fact } from "./types/graphiti.js";
 
@@ -98,6 +99,21 @@ export const GraphitiPlugin: Plugin = async (ctx: PluginInput) => {
   }
 
   const modelLimits = new Map<string, number>();
+
+  const projectNamespace = configState.status === "ready" ? getProjectNamespace(directory) : "";
+  const compactionHook = configState.status === "ready"
+    ? createCompactionHook(
+        {
+          directory,
+          client: ctx.client as unknown as CompactionContext["client"],
+        },
+        { projectNamespace },
+        {
+          threshold: configState.config.compactionThreshold,
+          getModelLimit: (providerID, modelID) => modelLimits.get(`${providerID}/${modelID}`),
+        }
+      )
+    : null;
 
   (async () => {
     try {
@@ -192,15 +208,15 @@ export const GraphitiPlugin: Plugin = async (ctx: PluginInput) => {
               }),
             ]);
 
-          const profile: Node[] = profileResult.success ? profileResult.data.nodes : [];
+          const profile: Node[] = profileResult.success ? (profileResult.data.nodes ?? []) : [];
           const projectEpisodes: Episode[] = projectEpisodesResult.success
-            ? projectEpisodesResult.data.episodes
+            ? (projectEpisodesResult.data.episodes ?? [])
             : [];
           const relevantNodes: Node[] = relevantNodesResult.success
-            ? relevantNodesResult.data.nodes
+            ? (relevantNodesResult.data.nodes ?? [])
             : [];
           const relevantFacts: Fact[] = relevantFactsResult.success
-            ? relevantFactsResult.data.facts
+            ? (relevantFactsResult.data.facts ?? [])
             : [];
 
           const memoryContext = formatContext({
@@ -337,14 +353,12 @@ Types:
 
                 const episodeBody = generateTypedContent(sanitizedContent, type);
                 const name = generateEpisodeName(sanitizedContent);
-                const uuid = crypto.randomUUID();
 
                 const result = await graphitiClient.addMemory({
                   name,
                   episodeBody,
                   groupId,
                   source: "text",
-                  uuid,
                 });
 
                 if (!result.success) {
@@ -356,8 +370,7 @@ Types:
 
                 return JSON.stringify({
                   success: true,
-                  memoryId: uuid,
-                  message: "Memory saved successfully",
+                  message: "Memory queued for processing",
                   scope,
                   type,
                 });
@@ -449,7 +462,7 @@ Types:
                   });
                 }
 
-                const profile = result.data.nodes.map((node) => ({
+                const profile = (result.data.nodes ?? []).map((node) => ({
                   fact: node.summary || node.name,
                   createdAt: node.created_at,
                 }));
@@ -486,7 +499,7 @@ Types:
                   });
                 }
 
-                const memories = result.data.episodes.map((episode) => {
+                const memories = (result.data.episodes ?? []).map((episode) => {
                   const parsed = parseTypePrefix(episode.content);
                   return {
                     memoryId: episode.uuid,
@@ -543,6 +556,10 @@ Types:
       }),
     },
 
-    event: async () => {},
+    event: async (eventData: { event: { type: string; properties?: unknown } }) => {
+      if (compactionHook) {
+        await compactionHook.event(eventData);
+      }
+    },
   };
 };
