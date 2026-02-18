@@ -14,5 +14,5 @@ export function getDataHome(): string {
 }
 
 export function getLogPath(): string {
-  return path.join(getHomedir(), '.opencode-graphiti.log');
+  return path.join(getHomedir(), '.opencode-graphiti-memory.log');
 }

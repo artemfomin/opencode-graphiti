@@ -1,12 +1,12 @@
 {
-  "name": "opencode-graphiti",
+  "name": "opencode-graphiti-memory",
   "version": "0.1.8",
   "description": "OpenCode plugin for persistent memory using Graphiti MCP server",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "opencode-graphiti": "./dist/cli.js"
+    "opencode-graphiti-memory": "./dist/cli.js"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target node && bun build ./src/cli.ts --outfile ./dist/cli.js --target node && tsc --emitDeclarationOnly",

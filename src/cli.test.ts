@@ -21,10 +21,10 @@ afterEach(async () => {
 
 describe("CLI Installer - Graphiti Migration", () => {
   describe("Plugin Registration", () => {
-    it("should register plugin as 'opencode-graphiti' (not @latest suffix)", () => {
-      // The plugin name should be exactly 'opencode-graphiti'
-      const PLUGIN_NAME = "opencode-graphiti";
-      expect(PLUGIN_NAME).toBe("opencode-graphiti");
+    it("should register plugin as 'opencode-graphiti-memory' (not @latest suffix)", () => {
+      // The plugin name should be exactly 'opencode-graphiti-memory'
+      const PLUGIN_NAME = "opencode-graphiti-memory";
+      expect(PLUGIN_NAME).toBe("opencode-graphiti-memory");
       expect(PLUGIN_NAME).not.toContain("@latest");
       expect(PLUGIN_NAME).not.toContain("supermemory");
     });
@@ -45,7 +45,7 @@ describe("CLI Installer - Graphiti Migration", () => {
       const jsonContent = stripJsoncComments(content);
       let config = JSON.parse(jsonContent);
       const plugins = (config.plugin as string[]) || [];
-      plugins.push("opencode-graphiti");
+      plugins.push("opencode-graphiti-memory");
       config.plugin = plugins;
 
       // Write back
@@ -54,16 +54,16 @@ describe("CLI Installer - Graphiti Migration", () => {
         (_match, start, middle, end) => {
           const trimmed = middle.trim();
           if (trimmed === "") {
-            return `${start}\n    "opencode-graphiti"\n  ${end}`;
+            return `${start}\n    "opencode-graphiti-memory"\n  ${end}`;
           }
-          return `${start}${middle.trimEnd()},\n    "opencode-graphiti"\n  ${end}`;
+          return `${start}${middle.trimEnd()},\n    "opencode-graphiti-memory"\n  ${end}`;
         }
       );
       await writeFile(configPath, newContent);
 
       // Verify
       const updated = readFileSync(configPath, "utf-8");
-      expect(updated).toContain("opencode-graphiti");
+      expect(updated).toContain("opencode-graphiti-memory");
       expect(updated).not.toContain("supermemory");
     });
 
@@ -74,14 +74,14 @@ describe("CLI Installer - Graphiti Migration", () => {
       // Create new config
       mkdirSync(configDir, { recursive: true });
       const config = `{
-  "plugin": ["opencode-graphiti"]
+  "plugin": ["opencode-graphiti-memory"]
 }
 `;
       await writeFile(configPath, config);
 
       // Verify
       const content = readFileSync(configPath, "utf-8");
-      expect(content).toContain("opencode-graphiti");
+      expect(content).toContain("opencode-graphiti-memory");
       expect(content).not.toContain("supermemory");
     });
 
@@ -91,13 +91,13 @@ describe("CLI Installer - Graphiti Migration", () => {
       const configPath = path.join(configDir, "opencode.jsonc");
 
       const config = `{
-  "plugin": ["opencode-graphiti"]
+  "plugin": ["opencode-graphiti-memory"]
 }`;
       await writeFile(configPath, config);
 
       // Check if already registered
       const content = readFileSync(configPath, "utf-8");
-      const alreadyRegistered = content.includes("opencode-graphiti");
+      const alreadyRegistered = content.includes("opencode-graphiti-memory");
       expect(alreadyRegistered).toBe(true);
     });
   });
@@ -292,14 +292,14 @@ graphiti(mode: "list", scope: "project")
 
     it("should print help with correct command names", () => {
       const help = `
-opencode-graphiti - Persistent memory for OpenCode agents
+opencode-graphiti-memory - Persistent memory for OpenCode agents
 
 Commands:
   install                    Install and configure the plugin
     --no-tui                 Run in non-interactive mode (for LLM agents)
     --disable-context-recovery   Disable Oh My OpenCode's context-window-limit-recovery hook
 `;
-      expect(help).toContain("opencode-graphiti");
+      expect(help).toContain("opencode-graphiti-memory");
       expect(help).not.toContain("opencode-supermemory");
     });
 
@@ -349,7 +349,7 @@ supermemory(mode: "list")
       const configPath = path.join(configDir, "opencode.jsonc");
 
       const config = `{
-  "plugin": ["oh-my-opencode", "opencode-graphiti"]
+  "plugin": ["oh-my-opencode", "opencode-graphiti-memory"]
 }`;
       await writeFile(configPath, config);
 
@@ -390,7 +390,7 @@ supermemory(mode: "list")
       const configPath = path.join(configDir, "opencode.jsonc");
 
       const invalidConfig = `{
-  "plugin": ["opencode-graphiti"
+  "plugin": ["opencode-graphiti-memory"
   // missing closing bracket
 }`;
       await writeFile(configPath, invalidConfig);

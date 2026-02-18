@@ -1,4 +1,4 @@
-# opencode-graphiti
+# opencode-graphiti-memory
 
 OpenCode plugin for persistent memory using [Graphiti](https://github.com/getzep/graphiti) MCP server.
 
@@ -9,7 +9,7 @@ Your agent remembers what you tell it - across sessions, across projects.
 ### For Humans
 
 ```bash
-bunx opencode-graphiti@latest install
+bunx opencode-graphiti-memory@latest install
 ```
 
 Then set your Graphiti server URL and user ID:
@@ -28,7 +28,7 @@ export GRAPHITI_GROUP_ID="your-group-id"
 
 **Or let your agent do it** - paste this into OpenCode:
 ```
-Install opencode-graphiti by following https://raw.githubusercontent.com/artemfomin/opencode-graphiti/main/README.md
+Install opencode-graphiti-memory by following https://raw.githubusercontent.com/artemfomin/opencode-graphiti-memory/main/README.md
 ```
 
 ### For LLM Agents
@@ -36,12 +36,12 @@ Install opencode-graphiti by following https://raw.githubusercontent.com/artemfo
 <details>
 <summary>Instructions for LLM Agents (click to expand)</summary>
 
-If you're an LLM agent helping set up opencode-graphiti, follow these steps:
+If you're an LLM agent helping set up opencode-graphiti-memory, follow these steps:
 
 #### Step 1: Run the installer
 
 ```bash
-bunx opencode-graphiti@latest install --no-tui
+bunx opencode-graphiti-memory@latest install --no-tui
 ```
 
 This will:
@@ -57,7 +57,7 @@ cat ~/.config/opencode/opencode.jsonc
 Should contain:
 ```json
 {
-  "plugin": ["opencode-graphiti"]
+  "plugin": ["opencode-graphiti-memory"]
 }
 ```
 
@@ -67,7 +67,7 @@ If not, add it manually:
 ```jsonc
 {
   "plugin": [
-    "opencode-graphiti"
+    "opencode-graphiti-memory"
     // ... other plugins
   ]
 }
@@ -76,7 +76,7 @@ If not, add it manually:
 **JSON:**
 ```json
 {
-  "plugin": ["opencode-graphiti"]
+  "plugin": ["opencode-graphiti-memory"]
 }
 ```
 
@@ -109,7 +109,7 @@ opencode -c
 They should see `graphiti` in the tools list. If not, check:
 1. Is `GRAPHITI_URL` and (`GRAPHITI_USER_ID` or `GRAPHITI_GROUP_ID`) set?
 2. Is the plugin in `opencode.jsonc`?
-3. Check logs: `tail ~/.opencode-graphiti.log`
+3. Check logs: `tail ~/.opencode-graphiti-memory.log`
 
 #### Step 5: Initialize codebase memory (optional)
 
@@ -213,6 +213,15 @@ graphiti({ mode: "list", limit: 10 })
 | User | `{userId}` or `{groupId}_profile` | All projects |
 | Project | `{groupId}_{hash}` | This project |
 
+### Project Hash
+
+The project namespace uses a hash derived from the git remote URL (`origin`) combined with the relative path from the git root. This ensures:
+- The same project cloned on different machines produces identical namespaces
+- Different subdirectories in a monorepo get distinct namespaces
+- SSH and HTTPS remotes for the same repo produce the same hash
+
+When no git remote is available (e.g., non-git directories), the plugin falls back to hashing the local directory path.
+
 ## Configuration
 
 Create `~/.config/opencode/graphiti.jsonc`:
@@ -297,6 +306,14 @@ Create `.opencode/graphiti.jsonc` in your project root to override settings:
 
 Local config merges with global config. Environment variables take highest precedence.
 
+## Breaking Changes (v0.2.0)
+
+- **Package renamed**: `opencode-graphiti` → `opencode-graphiti-memory`. Update your `opencode.jsonc`:
+  ```json
+  { "plugin": ["opencode-graphiti-memory"] }
+  ```
+- **Project hash changed**: The project namespace hash now uses the git remote URL instead of the local directory path. Existing memories stored under old hashes will not be automatically migrated. Run `/graphiti-init` to rebuild your project's memory.
+
 ## Usage with Oh My OpenCode
 
 If you're using [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode), disable its built-in auto-compact hook to let graphiti handle context compaction:
@@ -322,14 +339,14 @@ Local install:
 
 ```jsonc
 {
-  "plugin": ["file:///path/to/opencode-graphiti"]
+  "plugin": ["file:///path/to/opencode-graphiti-memory"]
 }
 ```
 
 ## Logs
 
 ```bash
-tail -f ~/.opencode-graphiti.log
+tail -f ~/.opencode-graphiti-memory.log
 ```
 
 ## License

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Release script for opencode-supermemory
+# Release script for opencode-graphiti-memory
 #
 # Usage:
 #   ./scripts/release.sh [patch|minor|major]
