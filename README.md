@@ -6,13 +6,15 @@ Your agent remembers what you tell it - across sessions, across projects.
 
 ## Installation
 
-### For Humans
+**Step 1:** Add the plugin to your OpenCode config (`~/.config/opencode/opencode.jsonc` or project-level `.opencode/opencode.jsonc`):
 
-```bash
-bunx @ceris/opencode-graphiti@latest install
+```jsonc
+{
+  "plugin": ["@ceris/opencode-graphiti"]
+}
 ```
 
-Then set your Graphiti server URL and user ID:
+**Step 2:** Set environment variables:
 
 ```bash
 export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
@@ -24,6 +26,16 @@ Or use explicit group ID:
 ```bash
 export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
 export GRAPHITI_GROUP_ID="your-group-id"
+```
+
+**Step 3:** Restart OpenCode. The plugin is auto-installed from npm.
+
+### Quick Install (CLI)
+
+Alternatively, run the installer to automate Step 1:
+
+```bash
+bunx @ceris/opencode-graphiti@latest install
 ```
 
 **Or let your agent do it** - paste this into OpenCode:
@@ -38,32 +50,10 @@ Install @ceris/opencode-graphiti by following https://raw.githubusercontent.com/
 
 If you're an LLM agent helping set up @ceris/opencode-graphiti, follow these steps:
 
-#### Step 1: Run the installer
+#### Step 1: Add to OpenCode config
 
-```bash
-bunx @ceris/opencode-graphiti@latest install --no-tui
-```
+Read `~/.config/opencode/opencode.jsonc` (or `.opencode/opencode.jsonc` in the project root) and add `@ceris/opencode-graphiti` to the `plugin` array:
 
-This will:
-- Register the plugin in `~/.config/opencode/opencode.jsonc`
-- Create the `/graphiti-init` command
-
-#### Step 2: Verify the config
-
-```bash
-cat ~/.config/opencode/opencode.jsonc
-```
-
-Should contain:
-```json
-{
-  "plugin": ["@ceris/opencode-graphiti"]
-}
-```
-
-If not, add it manually:
-
-**JSONC:**
 ```jsonc
 {
   "plugin": [
@@ -73,14 +63,15 @@ If not, add it manually:
 }
 ```
 
-**JSON:**
-```json
-{
-  "plugin": ["@ceris/opencode-graphiti"]
-}
+If the file doesn't exist, create it. OpenCode will auto-install the package from npm on restart.
+
+If manual config editing fails, try the CLI installer as a fallback:
+
+```bash
+bunx @ceris/opencode-graphiti@latest install --no-tui
 ```
 
-#### Step 3: Configure Graphiti connection
+#### Step 2: Configure Graphiti connection
 
 Set required environment variables:
 
@@ -98,7 +89,7 @@ Or create `~/.config/opencode/graphiti.jsonc`:
 }
 ```
 
-#### Step 4: Verify setup
+#### Step 3: Verify setup
 
 Tell the user to restart OpenCode and run:
 
@@ -109,9 +100,9 @@ opencode -c
 They should see `graphiti` in the tools list. If not, check:
 1. Is `GRAPHITI_URL` and (`GRAPHITI_USER_ID` or `GRAPHITI_GROUP_ID`) set?
 2. Is the plugin in `opencode.jsonc`?
-3. Check logs: `tail ~/.@ceris/opencode-graphiti.log`
+3. Check logs: `tail ~/.opencode-graphiti.log`
 
-#### Step 5: Initialize codebase memory (optional)
+#### Step 4: Initialize codebase memory (optional)
 
 Run `/graphiti-init` to have the agent explore and memorize the codebase.
 
@@ -306,7 +297,7 @@ Create `.opencode/graphiti.jsonc` in your project root to override settings:
 
 Local config merges with global config. Environment variables take highest precedence.
 
-## Breaking Changes (v0.2.0)
+## Migration from opencode-graphiti
 
 - **Package renamed**: `opencode-graphiti` → `@ceris/opencode-graphiti`. Update your `opencode.jsonc`:
   ```json
