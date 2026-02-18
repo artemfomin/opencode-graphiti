@@ -1,6 +1,6 @@
 {
   "name": "@ceris/opencode-graphiti",
-  "version": "0.1.8",
+  "version": "0.1.0",
   "description": "OpenCode plugin for persistent memory using Graphiti MCP server",
   "type": "module",
   "main": "dist/index.js",
