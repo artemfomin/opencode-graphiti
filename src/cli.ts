@@ -8,7 +8,7 @@ import { getConfigHome } from "./services/paths.js";
 const OPENCODE_CONFIG_DIR = getConfigHome();
 const OPENCODE_COMMAND_DIR = join(OPENCODE_CONFIG_DIR, "command");
 const OH_MY_OPENCODE_CONFIG = join(OPENCODE_CONFIG_DIR, "oh-my-opencode.json");
-const PLUGIN_NAME = "opencode-graphiti-memory";
+const PLUGIN_NAME = "@ceris/opencode-graphiti";
 
 const GRAPHITI_INIT_COMMAND = `---
 description: Initialize Graphiti with comprehensive codebase knowledge
@@ -196,10 +196,10 @@ function addPluginToConfig(configPath: string): boolean {
    try {
      const content = readFileSync(configPath, "utf-8");
      
-      if (content.includes("opencode-graphiti-memory")) {
-        console.log("✓ Plugin already registered in config");
-        return true;
-      }
+       if (content.includes("@ceris/opencode-graphiti")) {
+         console.log("✓ Plugin already registered in config");
+         return true;
+       }
 
     const jsonContent = stripJsoncComments(content);
     let config: Record<string, unknown>;
@@ -325,7 +325,7 @@ interface InstallOptions {
 }
 
 async function install(options: InstallOptions): Promise<number> {
-    console.log("\n🧠 opencode-graphiti-memory installer\n");
+    console.log("\n🧠 @ceris/opencode-graphiti installer\n");
 
   const rl = options.tui ? createReadline() : null;
 
@@ -418,7 +418,7 @@ async function install(options: InstallOptions): Promise<number> {
 
 function printHelp(): void {
     console.log(`
-  opencode-graphiti-memory - Persistent memory for OpenCode agents
+  @ceris/opencode-graphiti - Persistent memory for OpenCode agents
  
  Commands:
    install                    Install and configure the plugin
@@ -426,9 +426,9 @@ function printHelp(): void {
      --disable-context-recovery   Disable Oh My OpenCode's context-window-limit-recovery hook (use with --no-tui)
  
   Examples:
-    bunx opencode-graphiti-memory install
-    bunx opencode-graphiti-memory install --no-tui
-    bunx opencode-graphiti-memory install --no-tui --disable-context-recovery
+    bunx @ceris/opencode-graphiti install
+    bunx @ceris/opencode-graphiti install --no-tui
+    bunx @ceris/opencode-graphiti install --no-tui --disable-context-recovery
  `);
  }
 

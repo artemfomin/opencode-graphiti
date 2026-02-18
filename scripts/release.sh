@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Release script for opencode-graphiti-memory
+# Release script for @ceris/opencode-graphiti
 #
 # Usage:
 #   ./scripts/release.sh [patch|minor|major]

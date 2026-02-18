@@ -150,7 +150,7 @@ export class GraphitiClient {
       const response = await this.sendRequest("initialize", {
         protocolVersion: "2024-11-05",
         capabilities: {},
-        clientInfo: { name: "opencode-graphiti-memory", version: "1.0.0" },
+        clientInfo: { name: "@ceris/opencode-graphiti", version: "1.0.0" },
       });
 
       if (response.error) {
