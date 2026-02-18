@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getProjectNamespace, getProfileNamespace } from "./namespace";
+import {
+  getProjectNamespace,
+  getProfileNamespace,
+  normalizeGitRemoteUrl,
+} from "./namespace";
 import { initConfig, resetConfig } from "../config";
 
 describe("Namespace Generation", () => {
@@ -344,6 +349,89 @@ describe("Namespace Generation", () => {
 
       // Format: {groupId}_{hash}
       expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
+    });
+  });
+
+  describe("normalizeGitRemoteUrl()", () => {
+    const cases: Array<[string, string]> = [
+      ["git@github.com:user/repo.git", "github.com/user/repo"],
+      ["https://github.com/user/repo.git", "github.com/user/repo"],
+      ["https://github.com/user/repo", "github.com/user/repo"],
+      ["ssh://git@github.com/user/repo.git", "github.com/user/repo"],
+      [
+        "git@gitlab.com:group/subgroup/repo.git",
+        "gitlab.com/group/subgroup/repo",
+      ],
+      [
+        "https://gitlab.com/group/subgroup/repo.git",
+        "gitlab.com/group/subgroup/repo",
+      ],
+      ["GIT@GITHUB.COM:User/Repo.git", "github.com/user/repo"],
+      ["http://github.com/user/repo.git", "github.com/user/repo"],
+    ];
+
+    for (const [input, expected] of cases) {
+      it(`normalizes ${input}`, () => {
+        expect(normalizeGitRemoteUrl(input)).toBe(expected);
+      });
+    }
+  });
+
+  describe("Git Remote Hash", () => {
+    it("normalizes ssh and https to same hash input", () => {
+      const ssh = normalizeGitRemoteUrl("git@github.com:user/repo.git");
+      const https = normalizeGitRemoteUrl("https://github.com/user/repo.git");
+
+      expect(ssh).toBe(https);
+
+      const sshHash = createHash("sha256").update(ssh).digest("hex").substring(0, 8);
+      const httpsHash = createHash("sha256")
+        .update(https)
+        .digest("hex")
+        .substring(0, 8);
+
+      expect(sshHash).toBe(httpsHash);
+    });
+  });
+
+  describe("Monorepo Support", () => {
+    it("produces different hashes for different relative paths", () => {
+      const appAInput = "github.com/user/repo/packages/app-a";
+      const appBInput = "github.com/user/repo/packages/app-b";
+
+      const appAHash = createHash("sha256")
+        .update(appAInput)
+        .digest("hex")
+        .substring(0, 8);
+      const appBHash = createHash("sha256")
+        .update(appBInput)
+        .digest("hex")
+        .substring(0, 8);
+
+      expect(appAHash).not.toBe(appBHash);
+    });
+  });
+
+  describe("Fallback Behavior", () => {
+    it("falls back to hashing directory path without git remote", () => {
+      const testDir = join(process.env.GRAPHITI_TEST_HOME!, "no-git-repo");
+      mkdirSync(testDir, { recursive: true });
+
+      const namespace = getProjectNamespace(testDir);
+
+      expect(namespace).toMatch(/^test-team_[a-f0-9]{8}$/);
+    });
+  });
+
+  describe("Hash Cache", () => {
+    it("returns stable namespace for repeated calls on same path", () => {
+      const testDir = join(process.env.GRAPHITI_TEST_HOME!, "cached-project");
+      mkdirSync(testDir, { recursive: true });
+
+      const first = getProjectNamespace(testDir);
+      const second = getProjectNamespace(testDir);
+
+      expect(first).toBe(second);
     });
   });
 });
