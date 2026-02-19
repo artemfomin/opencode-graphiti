@@ -2,7 +2,7 @@
 
 OpenCode plugin for persistent memory using [Graphiti](https://github.com/getzep/graphiti) MCP server.
 
-Your agent remembers what you tell it - across sessions, across projects.
+Your agent remembers what you tell it - across sessions, across projects. 
 
 ## Installation
 
