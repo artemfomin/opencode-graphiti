@@ -33,3 +33,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 .sisyphus
+
+# Claude Agent folders
+.knowledge/
+.claude/
+.serena/
+AGENTS.md
