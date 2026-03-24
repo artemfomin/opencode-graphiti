@@ -35,7 +35,18 @@ export GRAPHITI_GROUP_ID="your-group-id"
 Alternatively, run the installer to automate Step 1:
 
 ```bash
+# Using npx (npm)
+npx @ceris/opencode-graphiti@latest install
+
+# Using bunx (Bun)
 bunx @ceris/opencode-graphiti@latest install
+```
+
+Or install globally and run directly:
+
+```bash
+npm install -g @ceris/opencode-graphiti
+opencode-graphiti install
 ```
 
 **Or let your agent do it** - paste this into OpenCode:
@@ -68,7 +79,8 @@ If the file doesn't exist, create it. OpenCode will auto-install the package fro
 If manual config editing fails, try the CLI installer as a fallback:
 
 ```bash
-bunx @ceris/opencode-graphiti@latest install --no-tui
+npx @ceris/opencode-graphiti@latest install --no-tui
+# or: bunx @ceris/opencode-graphiti@latest install --no-tui
 ```
 
 #### Step 2: Configure Graphiti connection
