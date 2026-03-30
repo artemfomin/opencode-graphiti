@@ -96,7 +96,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp");
         expect(state.config.groupId).toBe("global-group");
         expect(state.config.maxMemories).toBe(10);
       }
@@ -146,7 +146,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://localhost:9000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://localhost:9000/mcp");
         expect(state.config.groupId).toBe("local-group");
       }
     });
@@ -175,7 +175,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp");
         expect(state.config.groupId).toBe("global-group");
         expect(state.config.maxMemories).toBe(20); // local override
         expect(state.config.injectProfile).toBe(false); // local override
@@ -237,7 +237,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://env-host:7000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://env-host:7000/mcp");
       }
     });
 
@@ -380,7 +380,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp");
       }
     });
 
@@ -397,7 +397,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp");
       }
     });
 
@@ -414,7 +414,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp");
       }
     });
 
@@ -431,7 +431,7 @@ describe("config", () => {
       const state = initConfig(projectDir);
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
-        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp/");
+        expect(state.config.graphitiUrl).toBe("http://localhost:8000/mcp");
       }
     });
   });
