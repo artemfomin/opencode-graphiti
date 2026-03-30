@@ -17,14 +17,14 @@ Your agent remembers what you tell it - across sessions, across projects.
 **Step 2:** Set environment variables:
 
 ```bash
-export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
+export GRAPHITI_URL="http://your-graphiti-server:8000/mcp"
 export GRAPHITI_USER_ID="your-user-id"
 ```
 
 Or use explicit group ID:
 
 ```bash
-export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
+export GRAPHITI_URL="http://your-graphiti-server:8000/mcp"
 export GRAPHITI_GROUP_ID="your-group-id"
 ```
 
@@ -88,7 +88,7 @@ npx @ceris/opencode-graphiti@latest install --no-tui
 Set required environment variables:
 
 ```bash
-export GRAPHITI_URL="http://your-graphiti-server:8000/mcp/"
+export GRAPHITI_URL="http://your-graphiti-server:8000/mcp"
 export GRAPHITI_USER_ID="your-user-id"
 ```
 
@@ -96,7 +96,7 @@ Or create `~/.config/opencode/graphiti.jsonc`:
 
 ```jsonc
 {
-  "graphitiUrl": "http://localhost:8000/mcp/",
+  "graphitiUrl": "http://localhost:8000/mcp",
   "userId": "your-user-id"
 }
 ```
@@ -232,7 +232,7 @@ Create `~/.config/opencode/graphiti.jsonc`:
 ```jsonc
 {
   // Graphiti MCP server URL (required)
-  "graphitiUrl": "http://localhost:8000/mcp/",
+  "graphitiUrl": "http://localhost:8000/mcp",
   
   // User identifier for automatic namespacing (optional*)
   "userId": "john",

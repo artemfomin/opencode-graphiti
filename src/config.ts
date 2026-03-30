@@ -68,7 +68,7 @@ function normalizeGraphitiUrl(url: string): string {
   if (!normalized.endsWith("/mcp")) {
     normalized += "/mcp";
   }
-  return normalized + "/";
+  return normalized;
 }
 
 function sanitizeNamespace(name: string): string {
