@@ -6,6 +6,7 @@ import { getProjectNamespace } from "./namespace.js";
 import { log } from "./logger.js";
 import { getConfig } from "../config.js";
 import { getDataHome } from "./paths.js";
+import { generateMessageId, generatePartId } from "./ids.js";
 
 const MESSAGE_STORAGE = () => join(getDataHome(), "messages");
 const PART_STORAGE = () => join(getDataHome(), "parts");
@@ -164,18 +165,6 @@ function findNearestMessageWithFields(messageDir: string): StoredMessage | null 
     return null;
   }
   return null;
-}
-
-function generateMessageId(): string {
-  const timestamp = Date.now().toString(16);
-  const random = Math.random().toString(36).substring(2, 14);
-  return `msg_${timestamp}${random}`;
-}
-
-function generatePartId(): string {
-  const timestamp = Date.now().toString(16);
-  const random = Math.random().toString(36).substring(2, 10);
-  return `prt_${timestamp}${random}`;
 }
 
 function injectHookMessage(

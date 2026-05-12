@@ -9,6 +9,7 @@ import { stripPrivateContent, isFullyPrivate } from "./services/privacy.js";
 import { initConfig, getConfig, isConfigReady, type ConfigState } from "./config.js";
 import { log } from "./services/logger.js";
 import { createCompactionHook, type CompactionContext } from "./services/compaction.js";
+import { generatePartId } from "./services/ids.js";
 import type { MemoryScope, MemoryType } from "./types/index.js";
 import type { Episode, Node, Fact } from "./types/graphiti.js";
 
@@ -168,7 +169,7 @@ export const GraphitiPlugin: Plugin = async (ctx: PluginInput) => {
         if (detectMemoryKeyword(userMessage, config.keywordPatterns || [])) {
           log("chat.message: memory keyword detected");
           const nudgePart: Part = {
-            id: `graphiti-nudge-${Date.now()}`,
+            id: generatePartId(),
             sessionID: input.sessionID,
             messageID: output.message.id,
             type: "text",
@@ -228,7 +229,7 @@ export const GraphitiPlugin: Plugin = async (ctx: PluginInput) => {
 
           if (memoryContext) {
             const contextPart: Part = {
-              id: `graphiti-context-${Date.now()}`,
+              id: generatePartId(),
               sessionID: input.sessionID,
               messageID: output.message.id,
               type: "text",

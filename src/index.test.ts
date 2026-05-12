@@ -809,6 +809,10 @@ describe("chat.message hook", () => {
         (p: any) => p.type === "text" && p.text?.includes("MEMORY TRIGGER")
       );
       expect(nudgePart).toBeDefined();
+      // opencode server-side schema requires part.id to start with "prt".
+      // See: https://github.com/sst/opencode (Part schema, starts_with("prt")).
+      // Regression guard against ids like `graphiti-nudge-<ts>` shipped in 0.1.2.
+      expect((nudgePart as any).id).toMatch(/^prt_/);
     });
 
     it("ignores keywords inside code blocks", async () => {
@@ -893,6 +897,62 @@ describe("chat.message hook", () => {
       await plugin["chat.message"]?.(input as any, output as any);
 
       expect(mockFetch.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it("emits context part with opencode-compatible id when memories exist", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(createInitializeResponse("session-ctx-id"))
+      );
+
+      // profile (searchNodes), project episodes, relevant nodes, relevant facts.
+      // Returning a non-empty result for relevantNodes is enough to make
+      // formatContext() emit a non-empty string and trigger contextPart creation.
+      mockFetch.mockImplementationOnce(() =>
+        Promise.resolve(createToolResponse({ nodes: [] }))
+      );
+      mockFetch.mockImplementationOnce(() =>
+        Promise.resolve(createToolResponse({ episodes: [] }))
+      );
+      mockFetch.mockImplementationOnce(() =>
+        Promise.resolve(
+          createToolResponse({
+            nodes: [{ uuid: "n1", name: "pref", summary: "prefers concise responses" }],
+          })
+        )
+      );
+      mockFetch.mockImplementationOnce(() =>
+        Promise.resolve(createToolResponse({ facts: [] }))
+      );
+
+      const mockCtx = {
+        directory: projectDir,
+        client: {
+          provider: { list: mock(() => Promise.resolve({ data: { all: [] } })) },
+        },
+      } as unknown as PluginInput;
+
+      const { GraphitiPlugin } = await import("./index.js");
+      const plugin = await GraphitiPlugin(mockCtx);
+
+      const input = { sessionID: "ctx-id-session-1" };
+      const output: { parts: any[]; message: { id: string } } = {
+        parts: [{ type: "text", text: "Hello there" }],
+        message: { id: "msg-ctx-1" },
+      };
+
+      await plugin["chat.message"]?.(input as any, output as any);
+
+      const contextPart = output.parts.find(
+        (p: any) => p.type === "text" && p.text?.includes("[GRAPHITI]")
+      );
+      expect(contextPart).toBeDefined();
+      // opencode server-side schema requires part.id to start with "prt".
+      // Regression guard against ids like `graphiti-context-<ts>` shipped in 0.1.2.
+      expect(contextPart.id).toMatch(/^prt_/);
+      expect(contextPart.sessionID).toBe("ctx-id-session-1");
+      expect(contextPart.messageID).toBe("msg-ctx-1");
+      // contextPart is prepended (unshift), so it should be first.
+      expect(output.parts[0]).toBe(contextPart);
     });
 
     it("does not inject context on subsequent messages", async () => {
