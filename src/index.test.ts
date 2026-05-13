@@ -900,29 +900,46 @@ describe("chat.message hook", () => {
     });
 
     it("emits context part with opencode-compatible id when memories exist", async () => {
-      mockFetch.mockImplementation(() =>
-        Promise.resolve(createInitializeResponse("session-ctx-id"))
-      );
+      // The plugin issues 4 parallel callTool() invocations on first message
+      // (profile searchNodes, getEpisodes, relevant searchNodes, searchFacts).
+      // Each callTool may also issue an `initialize` request before the tool
+      // request because Promise.all races them before any sets the session.
+      // Routing by JSON-RPC method+tool-name is more reliable than ordering.
+      mockFetch.mockImplementation(async (_url, init) => {
+        const bodyText =
+          typeof init?.body === "string" ? init.body : String(init?.body ?? "");
+        let parsed: any = {};
+        try {
+          parsed = JSON.parse(bodyText);
+        } catch {
+          // fall through with empty parsed
+        }
 
-      // profile (searchNodes), project episodes, relevant nodes, relevant facts.
-      // Returning a non-empty result for relevantNodes is enough to make
-      // formatContext() emit a non-empty string and trigger contextPart creation.
-      mockFetch.mockImplementationOnce(() =>
-        Promise.resolve(createToolResponse({ nodes: [] }))
-      );
-      mockFetch.mockImplementationOnce(() =>
-        Promise.resolve(createToolResponse({ episodes: [] }))
-      );
-      mockFetch.mockImplementationOnce(() =>
-        Promise.resolve(
-          createToolResponse({
-            nodes: [{ uuid: "n1", name: "pref", summary: "prefers concise responses" }],
-          })
-        )
-      );
-      mockFetch.mockImplementationOnce(() =>
-        Promise.resolve(createToolResponse({ facts: [] }))
-      );
+        if (parsed.method === "initialize") {
+          return createInitializeResponse("session-ctx-id");
+        }
+
+        if (parsed.method === "tools/call") {
+          const toolName = parsed.params?.name as string | undefined;
+          // Returning a non-empty result for search_nodes is enough to make
+          // formatContext() emit a non-empty string and trigger contextPart.
+          if (toolName === "search_nodes") {
+            return createToolResponse({
+              nodes: [
+                { uuid: "n1", name: "pref", summary: "prefers concise responses" },
+              ],
+            });
+          }
+          if (toolName === "get_episodes") {
+            return createToolResponse({ episodes: [] });
+          }
+          if (toolName === "search_memory_facts") {
+            return createToolResponse({ facts: [] });
+          }
+        }
+
+        return createToolResponse({});
+      });
 
       const mockCtx = {
         directory: projectDir,
