@@ -1,0 +1,80 @@
+name: Release Preview
+
+on:
+  push:
+    branches:
+      - preview
+    tags:
+      - 'v*-preview*'
+      - 'v*-preview'
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: Base semver (e.g. 2.0.0). Workflow will publish as <base>-preview.<run_number>.
+        required: false
+        type: string
+
+jobs:
+  release-preview:
+    if: ${{ github.ref == 'refs/heads/preview' || (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-preview')) || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Resolve preview version
+        id: version
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          REF_NAME="${GITHUB_REF_NAME:-}"
+          INPUT_BASE="${{ github.event.inputs.base_version }}"
+          RUN_NUMBER="${{ github.run_number }}"
+
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG_VERSION="${REF_NAME#v}"
+            if [[ "$TAG_VERSION" == *-preview* ]]; then
+              RESOLVED="$TAG_VERSION"
+            else
+              RESOLVED="${TAG_VERSION}-preview.${RUN_NUMBER}"
+            fi
+          elif [[ -n "$INPUT_BASE" ]]; then
+            RESOLVED="${INPUT_BASE}-preview.${RUN_NUMBER}"
+          else
+            if [[ "$PKG_VERSION" == *-preview* ]]; then
+              RESOLVED="$PKG_VERSION"
+            else
+              RESOLVED="${PKG_VERSION}-preview.${RUN_NUMBER}"
+            fi
+          fi
+
+          echo "Resolved preview version: $RESOLVED"
+          echo "version=$RESOLVED" >> "$GITHUB_OUTPUT"
+
+      - name: Apply preview version to package.json
+        run: |
+          set -euo pipefail
+          npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - run: bun install
+
+      - run: bun run typecheck
+
+      - run: bun test
+
+      - run: bun run build
+
+      - name: Publish to npm with preview dist-tag
+        run: npm publish --access public --tag preview
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
