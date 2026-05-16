@@ -12,6 +12,35 @@ import {
   isGraphitiConfig,
 } from "./graphiti";
 
+const resolvedMemoryConfig = {
+  memory: { enabled: true },
+  capture: {
+    enabled: true,
+    trivialMessageMinLength: 4,
+    explicitClassMarkers: ["@graphiti"],
+    ratificationKeywords: {
+      positive: ["works", "good", "thanks", "perfect", "merged", "great"],
+      negative: ["wrong", "no", "doesn't work", "revert", "broken"],
+    },
+    ratificationWindowTurns: 1,
+    unverifiedAutoExpireMs: 86_400_000,
+  },
+  shadowExtractor: {
+    enabled: true,
+    timeoutMs: 8000,
+    maxConcurrency: 1,
+  },
+  recall: {
+    enabled: true,
+    topN: 5,
+    broadcastCompat: false,
+  },
+  markers: {
+    enabled: true,
+    prefix: "@graphiti",
+  },
+};
+
 describe("GraphitiConfig", () => {
   it("should validate a complete config", () => {
     const config: GraphitiConfig = {
@@ -24,6 +53,7 @@ describe("GraphitiConfig", () => {
       injectProfile: true,
       keywordPatterns: ["remember", "save"],
       compactionThreshold: 0.8,
+      ...resolvedMemoryConfig,
     };
 
     expect(isGraphitiConfig(config)).toBe(true);
@@ -41,6 +71,7 @@ describe("GraphitiConfig", () => {
     const minimalConfig: GraphitiConfig = {
       graphitiUrl: "http://localhost:8000",
       groupId: "test-group",
+      ...resolvedMemoryConfig,
     };
 
     expect(isGraphitiConfig(minimalConfig)).toBe(true);

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
+import * as graphitiClientModule from "./graphiti-client.js";
 import { GraphitiClient, type GraphitiResult } from "./graphiti-client.js";
 import type { Episode, Node, Fact } from "../types/graphiti.js";
 
@@ -352,6 +353,46 @@ describe("GraphitiClient", () => {
       );
       expect(toolBody.params.arguments.group_id).toBe("test-group");
       expect(result.success).toBe(true);
+    });
+
+    it("sanitizes secret-like content before calling add_memory", async () => {
+      mockFetch.mockImplementationOnce(() =>
+        Promise.resolve(createInitializeResponse("session-123"))
+      );
+
+      mockFetch.mockImplementationOnce(() =>
+        Promise.resolve(
+          createSSEResponse({
+            jsonrpc: "2.0",
+            id: 2,
+            result: {
+              content: [{ type: "text", text: '{"episode_uuid":"ep-123"}' }],
+              structuredContent: { episode_uuid: "ep-123" },
+              isError: false,
+            },
+          })
+        )
+      );
+
+      await client.addMemory({
+        name: "Secret Memory",
+        episodeBody: "never store sk-leak-xxxxxxxxxxxxxxxxxxxxxxxxx",
+        groupId: "test-group",
+        source: "deterministic",
+      });
+
+      const toolCall = mockFetch.mock.calls[1]!;
+      const toolBody = JSON.parse(toolCall[1].body);
+      const args = toolBody.params.arguments;
+      expect(args.episode_body).toContain("[REDACTED:api_key]");
+      expect(args.episode_body).not.toContain("sk-leak-xxxxxxxxxxxxxxxxxxxxxxxxx");
+      expect(args.metadata?.sanitizer?.redactions?.count).toBeGreaterThan(0);
+      expect(args.metadata?.sanitizer?.sanitized).toBe(true);
+    });
+
+    it("does not export raw unsafe write helpers", () => {
+      expect((graphitiClientModule as any).rawAddMemory).toBeUndefined();
+      expect((graphitiClientModule as any).addMemoryUnsafe).toBeUndefined();
     });
   });
 

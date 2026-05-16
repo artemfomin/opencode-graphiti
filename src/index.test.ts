@@ -160,6 +160,60 @@ describe("GraphitiPlugin", () => {
     });
   });
 
+  describe("mode: recall", () => {
+    it("returns bounded sanitized recall results", async () => {
+      mockFetch.mockImplementation(async (_url, init) => {
+        const bodyText = typeof init?.body === "string" ? init.body : String(init?.body ?? "");
+        const parsed = JSON.parse(bodyText);
+
+        if (parsed.method === "initialize") {
+          return createInitializeResponse("session-recall-tool");
+        }
+
+        if (parsed.params?.name === "search_nodes") {
+          expect(parsed.params.arguments.query).toBe("foo");
+          expect(parsed.params.arguments.max_nodes).toBe(3);
+          return createToolResponse({
+            nodes: [
+              {
+                uuid: "node-1",
+                name: "Node 1",
+                labels: [],
+                summary: "Visible <private>secret</private>",
+                created_at: "2026-01-01T00:00:00Z",
+                group_id: "test-group",
+              },
+            ],
+          });
+        }
+
+        if (parsed.params?.name === "search_memory_facts") {
+          expect(parsed.params.arguments.query).toBe("foo");
+          expect(parsed.params.arguments.max_facts).toBe(3);
+          return createToolResponse({ facts: [] });
+        }
+
+        return createToolResponse({});
+      });
+
+      const { GraphitiPlugin } = await import("./index.js");
+      const plugin = await GraphitiPlugin(mockCtx);
+      const result = await plugin.tool!.graphiti!.execute({
+        mode: "recall",
+        query: "foo",
+        topN: 3,
+      }, mockToolContext);
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.status).toBe("ok");
+      expect(parsed.items).toEqual([{ kind: "node", text: "Visible [REDACTED]" }]);
+      expect(parsed.items[0].text).not.toContain("secret");
+      expect(parsed.bounded).toBe(false);
+      expect(parsed.rawCount).toBe(1);
+    });
+  });
+
   describe("mode: add", () => {
     it("requires content parameter", async () => {
       const { GraphitiPlugin } = await import("./index.js");
@@ -899,12 +953,7 @@ describe("chat.message hook", () => {
       expect(mockFetch.mock.calls.length).toBeGreaterThan(0);
     });
 
-    it("emits context part with opencode-compatible id when memories exist", async () => {
-      // The plugin issues 4 parallel callTool() invocations on first message
-      // (profile searchNodes, getEpisodes, relevant searchNodes, searchFacts).
-      // Each callTool may also issue an `initialize` request before the tool
-      // request because Promise.all races them before any sets the session.
-      // Routing by JSON-RPC method+tool-name is more reliable than ordering.
+    it("emits recall context part with opencode-compatible id when recalled memories exist", async () => {
       mockFetch.mockImplementation(async (_url, init) => {
         const bodyText =
           typeof init?.body === "string" ? init.body : String(init?.body ?? "");
@@ -921,8 +970,6 @@ describe("chat.message hook", () => {
 
         if (parsed.method === "tools/call") {
           const toolName = parsed.params?.name as string | undefined;
-          // Returning a non-empty result for search_nodes is enough to make
-          // formatContext() emit a non-empty string and trigger contextPart.
           if (toolName === "search_nodes") {
             return createToolResponse({
               nodes: [
@@ -960,7 +1007,7 @@ describe("chat.message hook", () => {
       await plugin["chat.message"]?.(input as any, output as any);
 
       const contextPart = output.parts.find(
-        (p: any) => p.type === "text" && p.text?.includes("[GRAPHITI]")
+        (p: any) => p.type === "text" && p.text?.includes("[MEMORY RECALL")
       );
       expect(contextPart).toBeDefined();
       // opencode server-side schema requires part.id to start with "prt".
@@ -970,6 +1017,63 @@ describe("chat.message hook", () => {
       expect(contextPart.messageID).toBe("msg-ctx-1");
       // contextPart is prepended (unshift), so it should be first.
       expect(output.parts[0]).toBe(contextPart);
+      expect(contextPart.text).toContain("prefers concise responses");
+      expect(contextPart.text).not.toContain("[GRAPHITI]");
+    });
+
+    it("does not broadcast or inject by default when recall topN is zero", async () => {
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          recall: { enabled: true, topN: 0, broadcastCompat: false },
+        })
+      );
+      resetConfig();
+
+      mockFetch.mockImplementation(async (_url, init) => {
+        const bodyText = typeof init?.body === "string" ? init.body : String(init?.body ?? "");
+        const parsed = JSON.parse(bodyText);
+
+        if (parsed.method === "initialize") {
+          return createInitializeResponse("session-no-broadcast");
+        }
+
+        if (parsed.params?.name === "get_episodes") {
+          throw new Error("default recall must not call get_episodes");
+        }
+
+        return createToolResponse({
+          nodes: [{ uuid: "node-1", name: "legacy", summary: "legacy broadcast" }],
+          facts: [{ uuid: "fact-1", fact: "legacy fact" }],
+          episodes: [{ uuid: "episode-1", content: "legacy episode" }],
+        });
+      });
+
+      const mockCtx = {
+        directory: projectDir,
+        client: {
+          provider: { list: mock(() => Promise.resolve({ data: { all: [] } })) },
+        },
+      } as unknown as PluginInput;
+
+      const { GraphitiPlugin } = await import("./index.js");
+      const plugin = await GraphitiPlugin(mockCtx);
+
+      const output: { parts: any[]; message: { id: string } } = {
+        parts: [{ type: "text", text: "Hello there" }],
+        message: { id: "msg-no-broadcast" },
+      };
+
+      await plugin["chat.message"]?.({ sessionID: "no-broadcast-session" } as any, output as any);
+
+      expect(output.parts).toHaveLength(1);
+      expect(output.parts[0].text).toBe("Hello there");
+      expect(mockFetch.mock.calls.some((call) => {
+        const bodyText = typeof call[1]?.body === "string" ? call[1].body : String(call[1]?.body ?? "");
+        return bodyText.includes("get_episodes");
+      })).toBe(false);
     });
 
     it("does not inject context on subsequent messages", async () => {

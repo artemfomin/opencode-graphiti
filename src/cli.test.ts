@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdtemp, rm, readFile, writeFile } from "fs/promises";
 import { mkdirSync, existsSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { stripJsoncComments } from "./services/jsonc.js";
+import { resetLogger } from "./services/logger.js";
+import { runCli, type CliDependencies } from "./cli.js";
+import type { Episode } from "./types/graphiti.js";
 
 let testDir: string;
 
@@ -13,6 +16,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  resetLogger();
   delete process.env.GRAPHITI_TEST_HOME;
   if (existsSync(testDir)) {
     await rm(testDir, { recursive: true });
@@ -403,6 +407,113 @@ supermemory(mode: "list")
       } catch (err) {
         expect(err).toBeDefined();
       }
+    });
+  });
+
+  describe("migrate command", () => {
+    function legacyEpisode(uuid: string, content: string): Episode {
+      return {
+        uuid,
+        name: content.slice(0, 20),
+        content,
+        source: "text",
+        source_description: "fixture",
+        created_at: "2026-01-01T00:00:00.000Z",
+        group_id: "project-group",
+      };
+    }
+
+    function createCliDeps(episodes: Episode[] = []): { deps: CliDependencies; output: string[]; errors: string[]; addMemory: ReturnType<typeof mock>; getEpisodes: ReturnType<typeof mock> } {
+      const output: string[] = [];
+      const errors: string[] = [];
+      const getEpisodes = mock(async () => ({ success: true as const, data: { episodes } }));
+      const addMemory = mock(async () => ({ success: true as const, data: { message: "ok" } }));
+      return {
+        output,
+        errors,
+        addMemory,
+        getEpisodes,
+        deps: {
+          cwd: "/repo",
+          stdout: (line: string) => output.push(line),
+          stderr: (line: string) => errors.push(line),
+          initConfig: () => ({
+            status: "ready" as const,
+            config: {
+              graphitiUrl: "http://graphiti.test/mcp",
+              groupId: "base-group",
+              profileGroupId: "profile-group",
+              memory: { enabled: true },
+              capture: {
+                enabled: true,
+                trivialMessageMinLength: 4,
+                explicitClassMarkers: ["@graphiti"],
+                ratificationKeywords: { positive: [], negative: [] },
+                ratificationWindowTurns: 1,
+                unverifiedAutoExpireMs: 0,
+              },
+              shadowExtractor: { enabled: true, timeoutMs: 1, maxConcurrency: 1 },
+              recall: { enabled: true, topN: 5, broadcastCompat: false },
+              markers: { enabled: true, prefix: "@graphiti" },
+            },
+          }),
+          getProjectNamespace: () => "project-group",
+          createGraphitiClient: () => ({ getEpisodes, addMemory }),
+        },
+      };
+    }
+
+    it("defaults migrate to dry-run and prints wouldWrite count", async () => {
+      const { deps, output, addMemory } = createCliDeps([
+        legacyEpisode("e1", "[TYPE: preference] terse output"),
+      ]);
+
+      const code = await runCli(["migrate"], deps);
+
+      expect(code).toBe(0);
+      expect(output.join("\n")).toContain("Status: dry-run");
+      expect(output.join("\n")).toContain("Would write: 1");
+      expect(addMemory).not.toHaveBeenCalled();
+    });
+
+    it("applies migrate writes when --apply is passed", async () => {
+      const { deps, addMemory } = createCliDeps([
+        legacyEpisode("e1", "[TYPE: project-config] use Docker tests"),
+      ]);
+
+      const code = await runCli(["migrate", "--apply"], deps);
+
+      expect(code).toBe(0);
+      expect(addMemory).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects --dry-run and --apply together", async () => {
+      const { deps, errors } = createCliDeps();
+
+      const code = await runCli(["migrate", "--dry-run", "--apply"], deps);
+
+      expect(code).toBe(2);
+      expect(errors.join("\n")).toContain("Cannot combine --dry-run and --apply");
+    });
+
+    it("propagates --limit to migration discovery", async () => {
+      const { deps, getEpisodes } = createCliDeps([
+        legacyEpisode("e1", "[TYPE: preference] terse output"),
+      ]);
+
+      const code = await runCli(["migrate", "--limit", "5"], deps);
+
+      expect(code).toBe(0);
+      expect(getEpisodes).toHaveBeenCalledWith({ groupIds: ["project-group"], maxEpisodes: 5 });
+    });
+
+    it("prints migrate help", async () => {
+      const { deps, output } = createCliDeps();
+
+      const code = await runCli(["migrate", "--help"], deps);
+
+      expect(code).toBe(0);
+      expect(output.join("\n")).toContain("opencode-graphiti migrate");
     });
   });
 });

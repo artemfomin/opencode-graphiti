@@ -4,13 +4,27 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initConfig, getConfig, isConfigReady, resetConfig } from "./config.js";
 
+const MEMORY_CONFIG_ENV_KEYS = [
+  "GRAPHITI_MEMORY_ENABLED",
+  "GRAPHITI_CAPTURE_ENABLED",
+  "GRAPHITI_SHADOW_ENABLED",
+  "GRAPHITI_SHADOW_TIMEOUT_MS",
+  "GRAPHITI_SHADOW_PROVIDER",
+  "GRAPHITI_SHADOW_MODEL",
+  "GRAPHITI_RECALL_TOP_N",
+  "GRAPHITI_RECALL_BROADCAST_COMPAT",
+] as const;
+
 describe("config", () => {
   let testHome: string;
   let globalConfigPath: string;
   let projectDir: string;
   let localConfigPath: string;
+  let savedEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
+    savedEnv = { ...process.env };
+
     // Create isolated test environment
     testHome = join(tmpdir(), `graphiti-test-${Date.now()}`);
     mkdirSync(testHome, { recursive: true });
@@ -27,6 +41,9 @@ describe("config", () => {
     delete process.env.GRAPHITI_URL;
     delete process.env.GRAPHITI_GROUP_ID;
     delete process.env.GRAPHITI_USER_ID;
+    for (const key of MEMORY_CONFIG_ENV_KEYS) {
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
@@ -38,6 +55,13 @@ describe("config", () => {
     delete process.env.GRAPHITI_URL;
     delete process.env.GRAPHITI_GROUP_ID;
     delete process.env.GRAPHITI_USER_ID;
+    for (const key of MEMORY_CONFIG_ENV_KEYS) {
+      delete process.env[key];
+    }
+    for (const key of Object.keys(process.env)) {
+      delete process.env[key];
+    }
+    Object.assign(process.env, savedEnv);
   });
 
   describe("ConfigState pattern", () => {
@@ -509,6 +533,54 @@ describe("config", () => {
       }
     });
 
+    test("applies preview memory defaults", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+        })
+      );
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.memory.enabled).toBe(true);
+        expect(state.config.capture.enabled).toBe(true);
+        expect(state.config.capture.trivialMessageMinLength).toBe(4);
+        expect(state.config.capture.explicitClassMarkers).toEqual(["@graphiti"]);
+        expect(state.config.capture.ratificationKeywords.positive).toEqual([
+          "works",
+          "good",
+          "thanks",
+          "perfect",
+          "merged",
+          "great",
+        ]);
+        expect(state.config.capture.ratificationKeywords.negative).toEqual([
+          "wrong",
+          "no",
+          "doesn't work",
+          "revert",
+          "broken",
+        ]);
+        expect(state.config.capture.ratificationWindowTurns).toBe(1);
+        expect(state.config.capture.unverifiedAutoExpireMs).toBe(86_400_000);
+        expect(state.config.shadowExtractor.enabled).toBe(true);
+        expect(state.config.shadowExtractor.timeoutMs).toBe(8000);
+        expect(state.config.shadowExtractor.maxConcurrency).toBe(1);
+        expect(state.config.shadowExtractor.provider).toBeUndefined();
+        expect(state.config.shadowExtractor.model).toBeUndefined();
+        expect(state.config.recall.enabled).toBe(true);
+        expect(state.config.recall.topN).toBe(5);
+        expect(state.config.recall.broadcastCompat).toBe(false);
+        expect(state.config.markers.enabled).toBe(true);
+        expect(state.config.markers.prefix).toBe("@graphiti");
+      }
+    });
+
     test("profileGroupId defaults to {groupId}_profile", () => {
       mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
       writeFileSync(
@@ -541,6 +613,149 @@ describe("config", () => {
       expect(state.status).toBe("ready");
       if (state.status === "ready") {
         expect(state.config.profileGroupId).toBe("custom-profile");
+      }
+    });
+  });
+
+  describe("memory architecture config", () => {
+    test("keeps defaults for omitted fields in partial config sections", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          recall: { topN: 3 },
+        })
+      );
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.recall.topN).toBe(3);
+        expect(state.config.recall.enabled).toBe(true);
+        expect(state.config.recall.broadcastCompat).toBe(false);
+        expect(state.config.memory.enabled).toBe(true);
+        expect(state.config.capture.enabled).toBe(true);
+        expect(state.config.shadowExtractor.enabled).toBe(true);
+      }
+    });
+
+    test("allows memory to be disabled from config", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          memory: { enabled: false },
+        })
+      );
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.memory.enabled).toBe(false);
+      }
+    });
+
+    test("allows capture to be disabled from config", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          capture: { enabled: false },
+        })
+      );
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.capture.enabled).toBe(false);
+      }
+    });
+
+    test("overrides shadow enabled from env", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          shadowExtractor: { enabled: true },
+        })
+      );
+      process.env.GRAPHITI_SHADOW_ENABLED = "false";
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.shadowExtractor.enabled).toBe(false);
+      }
+    });
+
+    test("env recall topN takes precedence over config file", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          recall: { topN: 3 },
+        })
+      );
+      process.env.GRAPHITI_RECALL_TOP_N = "10";
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.recall.topN).toBe(10);
+      }
+    });
+
+    test("invalid shadow timeout returns invalid config state", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          shadowExtractor: { timeoutMs: -1 },
+        })
+      );
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("invalid");
+      if (state.status === "invalid") {
+        expect(state.reason).toContain("shadowExtractor.timeoutMs");
+      }
+    });
+
+    test("ignores invalid numeric env override", () => {
+      mkdirSync(join(testHome, ".config", "opencode"), { recursive: true });
+      writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          graphitiUrl: "http://localhost:8000",
+          groupId: "test-group",
+          recall: { topN: 3 },
+        })
+      );
+      process.env.GRAPHITI_RECALL_TOP_N = "NaN_garbage";
+
+      const state = initConfig(projectDir);
+
+      expect(state.status).toBe("ready");
+      if (state.status === "ready") {
+        expect(state.config.recall.topN).toBe(3);
       }
     });
   });

@@ -1,4 +1,10 @@
 import type { Episode, Node, Fact } from "../types/graphiti.js";
+import {
+  assertSanitized,
+  sanitizeForGraphiti,
+  type SanitizedPayload,
+  type SanitizerSource,
+} from "./sanitizer.js";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 
@@ -15,6 +21,13 @@ export interface AddMemoryParams {
   episodeBody: string;
   groupId?: string;
   source?: string;
+  sourceDescription?: string;
+  uuid?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AddMemoryExtra {
+  groupId?: string;
   sourceDescription?: string;
   uuid?: string;
 }
@@ -242,17 +255,44 @@ export class GraphitiClient {
   }
 
   async addMemory(
-    params: AddMemoryParams
+    params: AddMemoryParams | SanitizedPayload,
+    extra?: AddMemoryExtra
   ): Promise<GraphitiResult<{ message: string }>> {
+    const isSanitized = isSanitizedInput(params);
+    const sanitized = isSanitized
+      ? params
+      : sanitizeForGraphiti({
+          name: params.name,
+          body: params.episodeBody,
+          source: toSanitizerSource(params.source),
+          metadata: params.metadata,
+        });
+
+    assertSanitized(sanitized);
+
     const args: Record<string, unknown> = {
-      name: params.name,
-      episode_body: params.episodeBody,
+      name: sanitized.name,
+      episode_body: sanitized.body,
+      source: sanitized.source,
+      metadata: {
+        ...sanitized.metadata,
+        sanitizer: {
+          sanitized: true,
+          source: sanitized.source,
+          redactions: sanitized.redactions,
+        },
+      },
     };
 
-    if (params.groupId) args.group_id = params.groupId;
-    if (params.source) args.source = params.source;
-    if (params.sourceDescription) args.source_description = params.sourceDescription;
-    if (params.uuid) args.uuid = params.uuid;
+    if (isSanitized) {
+      if (extra?.groupId) args.group_id = extra.groupId;
+      if (extra?.sourceDescription) args.source_description = extra.sourceDescription;
+      if (extra?.uuid) args.uuid = extra.uuid;
+    } else {
+      if (params.groupId) args.group_id = params.groupId;
+      if (params.sourceDescription) args.source_description = params.sourceDescription;
+      if (params.uuid) args.uuid = params.uuid;
+    }
 
     return this.callTool("add_memory", args);
   }
@@ -307,4 +347,28 @@ export class GraphitiClient {
 
     return this.callTool("clear_graph", args);
   }
+}
+
+function isSanitizedInput(
+  params: AddMemoryParams | SanitizedPayload
+): params is SanitizedPayload {
+  try {
+    assertSanitized(params);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function toSanitizerSource(source: string | undefined): SanitizerSource {
+  if (
+    source === "deterministic" ||
+    source === "shadow" ||
+    source === "marker" ||
+    source === "compaction" ||
+    source === "migration"
+  ) {
+    return source;
+  }
+  return "deterministic";
 }

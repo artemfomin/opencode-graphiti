@@ -4,6 +4,10 @@ import { join } from "node:path";
 import * as readline from "node:readline";
 import { stripJsoncComments } from "./services/jsonc.js";
 import { getConfigHome } from "./services/paths.js";
+import { initConfig, type ConfigState } from "./config.js";
+import { GraphitiClient } from "./services/graphiti-client.js";
+import { getProjectNamespace } from "./services/namespace.js";
+import { runMigration, type MigrationResult } from "./services/migration.js";
 
 const OPENCODE_CONFIG_DIR = getConfigHome();
 const OPENCODE_COMMAND_DIR = join(OPENCODE_CONFIG_DIR, "command");
@@ -324,6 +328,21 @@ interface InstallOptions {
   disableAutoCompact: boolean;
 }
 
+export interface CliDependencies {
+  cwd?: string;
+  stdout?: (line: string) => void;
+  stderr?: (line: string) => void;
+  initConfig?: (directory: string) => ConfigState;
+  getProjectNamespace?: (directory: string) => string;
+  createGraphitiClient?: (graphitiUrl: string) => Pick<GraphitiClient, "addMemory" | "getEpisodes">;
+}
+
+interface MigrateArgs {
+  dryRun: boolean;
+  groupId?: string;
+  limit?: number;
+}
+
 async function install(options: InstallOptions): Promise<number> {
     console.log("\n🧠 @ceris/opencode-graphiti installer\n");
 
@@ -429,28 +448,144 @@ function printHelp(): void {
     bunx @ceris/opencode-graphiti install
     bunx @ceris/opencode-graphiti install --no-tui
     bunx @ceris/opencode-graphiti install --no-tui --disable-context-recovery
- `);
- }
+  `);
+  }
 
-const args = process.argv.slice(2);
+function printMigrateHelp(write: (line: string) => void = console.log): void {
+  write(`
+opencode-graphiti migrate [--dry-run|--apply] [--group-id <id>] [--limit <n>] [--help]
 
-if (args.length === 0 || args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
-  printHelp();
-  process.exit(0);
+Options:
+  --dry-run       Report what would be migrated without writing (default)
+  --apply         Write migrated records
+  --group-id <id> Target a specific Graphiti group
+  --limit <n>     Cap how many episodes are scanned
+  --help          Show this help
+`);
 }
 
-if (args[0] === "install") {
-  const noTui = args.includes("--no-tui");
-  const disableAutoCompact = args.includes("--disable-context-recovery");
-  install({ tui: !noTui, disableAutoCompact }).then((code) => process.exit(code));
-} else if (args[0] === "setup") {
-  // Backwards compatibility
-  console.log("Note: 'setup' is deprecated. Use 'install' instead.\n");
-  const noTui = args.includes("--no-tui");
-  const disableAutoCompact = args.includes("--disable-context-recovery");
-  install({ tui: !noTui, disableAutoCompact }).then((code) => process.exit(code));
-} else {
+function parseMigrateArgs(args: string[]): { ok: true; value: MigrateArgs } | { ok: false; code: number; error: string } {
+  let dryRunFlag = false;
+  let applyFlag = false;
+  let groupId: string | undefined;
+  let limit: number | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--dry-run") {
+      dryRunFlag = true;
+    } else if (arg === "--apply") {
+      applyFlag = true;
+    } else if (arg === "--group-id") {
+      groupId = args[index + 1];
+      index += 1;
+      if (!groupId) return { ok: false, code: 2, error: "--group-id requires a value" };
+    } else if (arg === "--limit") {
+      const rawLimit = args[index + 1];
+      index += 1;
+      limit = Number.parseInt(rawLimit ?? "", 10);
+      if (!Number.isFinite(limit) || limit <= 0) {
+        return { ok: false, code: 2, error: "--limit requires a positive integer" };
+      }
+    } else if (arg === "--help" || arg === "-h") {
+      return { ok: true, value: { dryRun: true, groupId, limit } };
+    } else {
+      return { ok: false, code: 2, error: `Unknown migrate option: ${arg}` };
+    }
+  }
+
+  if (dryRunFlag && applyFlag) {
+    return { ok: false, code: 2, error: "Cannot combine --dry-run and --apply" };
+  }
+
+  return { ok: true, value: { dryRun: !applyFlag, groupId, limit } };
+}
+
+function printMigrationSummary(
+  result: MigrationResult,
+  write: (line: string) => void = console.log
+): void {
+  write("Migration summary");
+  write(`Status: ${result.status}`);
+  write(`Scanned: ${result.counts.scanned}`);
+  write(`Would write: ${result.counts.wouldWrite}`);
+  write(`Written: ${result.counts.written}`);
+  write(`Already migrated: ${result.counts.alreadyMigrated}`);
+  write(`Unmapped: ${result.counts.unmapped}`);
+  write(`Failed writes: ${result.counts.failedWrites}`);
+  write(`By old type: ${JSON.stringify(result.counts.byOldType)}`);
+  write(`Mapped by new class: ${JSON.stringify(result.counts.mappedByNewClass)}`);
+  if (result.unmappedTypes.length > 0) {
+    write(`Unmapped types: ${JSON.stringify(result.unmappedTypes)}`);
+  }
+  if (result.errors.length > 0) {
+    write(`Errors: ${JSON.stringify(result.errors)}`);
+  }
+}
+
+async function runMigrate(args: string[], deps: CliDependencies): Promise<number> {
+  const write = deps.stdout ?? console.log;
+  const writeError = deps.stderr ?? console.error;
+
+  if (args.includes("--help") || args.includes("-h")) {
+    printMigrateHelp(write);
+    return 0;
+  }
+
+  const parsed = parseMigrateArgs(args);
+  if (!parsed.ok) {
+    writeError(parsed.error);
+    return parsed.code;
+  }
+
+  const directory = deps.cwd ?? process.cwd();
+  const configState = (deps.initConfig ?? initConfig)(directory);
+  if (configState.status !== "ready") {
+    writeError(`Graphiti not configured: ${configState.reason}`);
+    return 1;
+  }
+
+  const groupId = parsed.value.groupId ?? (deps.getProjectNamespace ?? getProjectNamespace)(directory);
+  const client = (deps.createGraphitiClient ?? ((url: string) => new GraphitiClient(url)))(
+    configState.config.graphitiUrl
+  );
+  const result = await runMigration(
+    { client, groupId, limit: parsed.value.limit },
+    { dryRun: parsed.value.dryRun, limit: parsed.value.limit }
+  );
+
+  printMigrationSummary(result, write);
+  return result.counts.failedWrites > 0 ? 3 : 0;
+}
+
+export async function runCli(args: string[], deps: CliDependencies = {}): Promise<number> {
+  if (args.length === 0 || args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
+    printHelp();
+    return 0;
+  }
+
+  if (args[0] === "install") {
+    const noTui = args.includes("--no-tui");
+    const disableAutoCompact = args.includes("--disable-context-recovery");
+    return install({ tui: !noTui, disableAutoCompact });
+  }
+
+  if (args[0] === "setup") {
+    console.log("Note: 'setup' is deprecated. Use 'install' instead.\n");
+    const noTui = args.includes("--no-tui");
+    const disableAutoCompact = args.includes("--disable-context-recovery");
+    return install({ tui: !noTui, disableAutoCompact });
+  }
+
+  if (args[0] === "migrate") {
+    return runMigrate(args.slice(1), deps);
+  }
+
   console.error(`Unknown command: ${args[0]}`);
   printHelp();
-  process.exit(1);
+  return 1;
+}
+
+if (import.meta.main) {
+  runCli(process.argv.slice(2)).then((code) => process.exit(code));
 }

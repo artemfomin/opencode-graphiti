@@ -356,8 +356,99 @@ describe("compaction - Graphiti integration", () => {
       if (capturedArgs) {
         expect(capturedArgs.episode_body).toContain("[TYPE: conversation]");
         expect(capturedArgs.episode_body).toContain("[Session Summary]");
-        expect(capturedArgs.source).toBe("text");
+        expect(capturedArgs.source).toBe("compaction");
       }
+    });
+
+    it("redacts secrets from compaction summaries before Graphiti writes", async () => {
+      let capturedArgs: any = null;
+
+      mockFetch.mockImplementation((url: string, options: any) => {
+        const body = JSON.parse(options.body);
+
+        if (body.method === "initialize") {
+          return Promise.resolve(createInitializeResponse("session-123"));
+        }
+
+        if (body.method === "tools/call") {
+          if (body.params.name === "add_memory") {
+            capturedArgs = body.params.arguments;
+            return Promise.resolve(createToolResponse({ episode_uuid: "ep-new" }));
+          }
+          return Promise.resolve(createToolResponse({ episodes: [] }));
+        }
+
+        return Promise.resolve(createToolResponse({}));
+      });
+
+      const { createCompactionHook } = await import("./compaction.js");
+      const mockClient = createMockClient();
+      mockClient.session.messages = mock(() =>
+        Promise.resolve({
+          data: [
+            {
+              info: { id: "msg-secret", role: "assistant", summary: true },
+              parts: [
+                {
+                  type: "text",
+                  text:
+                    "Summary with OPENAI_API_KEY=sk-must-not-leak-XXXXXX in content that is long enough to pass the compaction save threshold and reach Graphiti.",
+                },
+              ],
+            },
+          ],
+        })
+      );
+
+      const hook = createCompactionHook(
+        { directory: testDir, client: mockClient as any },
+        { projectNamespace: "test-namespace" }
+      );
+
+      await hook.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg-1",
+              role: "assistant",
+              sessionID: "secret-session",
+              providerID: "anthropic",
+              modelID: "claude-3",
+              tokens: {
+                input: 180000,
+                output: 5000,
+                cache: { read: 0, write: 0 },
+              },
+              finish: true,
+            },
+          },
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await hook.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg-2",
+              role: "assistant",
+              sessionID: "secret-session",
+              summary: true,
+              finish: true,
+            },
+          },
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(capturedArgs).not.toBeNull();
+      expect(capturedArgs.episode_body).toContain("OPENAI_API_KEY=[REDACTED:env_secret]");
+      expect(capturedArgs.episode_body).not.toContain("sk-must-not-leak-XXXXXX");
+      expect(capturedArgs.source).toBe("compaction");
     });
   });
 
