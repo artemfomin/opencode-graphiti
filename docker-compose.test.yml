@@ -1,0 +1,26 @@
+# docker-compose.test.yml — sandboxed test runner used by the memory-architecture release work.
+# Source is bind-mounted so iterative edits are visible without rebuild.
+# node_modules and dist are kept inside the container to avoid platform binary clashes (Windows host vs Linux container).
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: oc-graphiti-test:local
+    working_dir: /app
+    volumes:
+      - .:/app
+      - oc_graphiti_node_modules:/app/node_modules
+      - oc_graphiti_dist:/app/dist
+    environment:
+      - CI=true
+      - FORCE_COLOR=0
+      # Default to NOT running env-gated integration tests. Override per-invocation if needed:
+      #   docker compose -f docker-compose.test.yml run --rm -e RUN_INTEGRATION_TESTS=true -e GRAPHITI_URL=http://host:8000 test
+      - RUN_INTEGRATION_TESTS=false
+    # Run the full validation suite by default. Override via `run --rm test bun test path/to/x`.
+    command: ["sh", "-c", "bun install --no-progress && bun run typecheck && bun test && bun run build"]
+
+volumes:
+  oc_graphiti_node_modules:
+  oc_graphiti_dist:

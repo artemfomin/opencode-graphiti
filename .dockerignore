@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.sisyphus
+.opencode
+.knowledge
+*.log
+.DS_Store
+coverage

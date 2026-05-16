@@ -1,0 +1,21 @@
+# Dockerfile.test — isolated test runner for OC-Graphiti.
+# Uses oven/bun for parity with `bun test` / `bun build` used by package.json.
+FROM oven/bun:1.2-alpine
+
+WORKDIR /app
+
+# Install minimal tooling: typescript needs `tsc` for the build step.
+# Bun ships its own runtime; we still need node for compatibility (tsc shells out fine via bunx).
+
+# Copy manifest first for layer caching.
+COPY package.json bun.lock* ./
+
+# Install dependencies. Do NOT use --frozen-lockfile here because lockfile drift exists in the working tree;
+# the release validation step (Task 11) explicitly checks the lockfile separately.
+RUN bun install --no-progress
+
+# Source comes via bind-mount at runtime (docker-compose.test.yml). Falling back to COPY for `docker build` smoke checks.
+COPY . .
+
+# Default command is the full validation suite; overridable via docker-compose run args.
+CMD ["sh", "-c", "bun run typecheck && bun test && bun run build"]
