@@ -20,7 +20,7 @@ Stack: TypeScript 5.7 strict, Bun for build/test, runtime deps `@opencode-ai/plu
 |-- .sisyphus/research/graphiti-transport.md  # MCP transport research (2026-01-28)
 `-- README.md, package.json, tsconfig.json, bun.lock, .gitignore
 ```
-33 tracked files. Package publishes `dist/` only: `main` dist/index.js, `types` dist/index.d.ts,
+Generation baseline `a900aea`: 33 tracked files. Package publishes `dist/` only: `main` dist/index.js, `types` dist/index.d.ts,
 bin `opencode-graphiti` -> dist/cli.js. package.json `opencode` block: type plugin, hooks `chat.message`, `event`.
 
 ## WHERE TO LOOK
@@ -94,4 +94,4 @@ Consumer install: `bunx @ceris/opencode-graphiti@latest install [--no-tui] [--di
   Committing AGENTS.md files needs `git add -f` or a .gitignore change.
 - `.sisyphus/research/graphiti-transport.md` is tracked despite the ignore (force-added).
 - `release.sh` needs bash + jq (no Windows-native equivalent); everything else runs via `bun`.
-- `.omo/` is untracked init-deep scaffolding.
+- `.omo/init-deep.json` records the generation baseline; temporary `.omo/init-deep/` scanner reports/digests are removed after generation.
